@@ -16,12 +16,20 @@ This project turns a Raspberry Pi 4 into a push-button interview recorder applia
 - External SSD mounted at `/recordings`
 - Momentary push button wired to **GPIO2 (BCM pin 2)** and **GND**
 
-## Output format
+## Quick start for your setup (`mayday@testpi`)
 
-- 720p video + AAC audio in MP4
-- Date + rolling interview filename format:
-  - `YYYY-MM-DD_interview_001.mp4`
-  - `YYYY-MM-DD_interview_002.mp4`
+SSH to your Pi:
+
+```bash
+ssh mayday@testpi
+```
+
+Clone the project on the Pi:
+
+```bash
+git clone https://github.com/HrothgarB/test.git /home/mayday/interview-recorder
+cd /home/mayday/interview-recorder
+```
 
 ## Install dependencies (Pi OS)
 
@@ -45,7 +53,7 @@ If your devices are not `/dev/video0` and `default`, set env vars in the service
 
 ```bash
 sudo mkdir -p /recordings
-sudo chown -R pi:pi /recordings
+sudo chown -R mayday:mayday /recordings
 ```
 
 Ensure your SSD is mounted there at boot (`/etc/fstab`).
@@ -53,15 +61,21 @@ Ensure your SSD is mounted there at boot (`/etc/fstab`).
 ## Manual test (before systemd)
 
 ```bash
-cd /home/pi/interview-recorder
+cd /home/mayday/interview-recorder
 chmod +x scripts/record_interview.sh scripts/gpio_recorder.py
 python3 scripts/gpio_recorder.py \
   --pin 2 \
-  --record-script /home/pi/interview-recorder/scripts/record_interview.sh \
+  --record-script /home/mayday/interview-recorder/scripts/record_interview.sh \
   --child-log-file /tmp/interview-recorder-ffmpeg.log
 ```
 
 Press button once to start and again to stop.
+
+Verify recordings:
+
+```bash
+ls -lh /recordings
+```
 
 ## Install as systemd service
 
