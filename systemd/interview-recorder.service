@@ -1,0 +1,15 @@
+[Unit]
+Description=Interview Recorder GPIO Controller
+After=multi-user.target
+
+[Service]
+Type=simple
+User=mayday
+WorkingDirectory=/home/mayday/interview-recorder
+ExecStart=/usr/bin/python3 /home/mayday/interview-recorder/scripts/gpio_recorder.py --pin 2 --record-script /home/mayday/interview-recorder/scripts/record_interview.sh --child-log-file /var/log/interview-recorder/ffmpeg.log
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
