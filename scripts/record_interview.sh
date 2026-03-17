@@ -15,6 +15,8 @@ VIDEO_BITRATE="${VIDEO_BITRATE:-3M}"
 AUDIO_BITRATE="${AUDIO_BITRATE:-128k}"
 AUDIO_RATE="${AUDIO_RATE:-48000}"
 AUDIO_CHANNELS="${AUDIO_CHANNELS:-1}"
+START_DELAY_SECONDS="${START_DELAY_SECONDS:-2}"
+VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-1}"
 
 DATE="$(date +%F)"
 mkdir -p "$OUT_DIR"
@@ -67,6 +69,17 @@ echo "[record_interview] Recording to: $OUT_FILE"
 echo "[record_interview] Using video device: $VIDEO_DEV"
 echo "[record_interview] Using audio device: $AUDIO_DEV"
 echo "[record_interview] Using audio channels: $AUDIO_CHANNELS"
+echo "[record_interview] Startup delay (seconds): $START_DELAY_SECONDS"
+echo "[record_interview] Video warmup (seconds): $VIDEO_WARMUP_SECONDS"
+
+if [[ "$START_DELAY_SECONDS" != "0" ]]; then
+  sleep "$START_DELAY_SECONDS"
+fi
+
+if [[ "$VIDEO_WARMUP_SECONDS" != "0" ]]; then
+  echo "[record_interview] Warming camera for $VIDEO_WARMUP_SECONDS second(s)"
+  ffmpeg -hide_banner -loglevel error     -f v4l2 -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV"     -t "$VIDEO_WARMUP_SECONDS" -f null - >/dev/null 2>&1 || true
+fi
 
 exec ffmpeg \
   -hide_banner -loglevel warning \
