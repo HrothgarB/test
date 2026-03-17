@@ -69,6 +69,14 @@ Based on your sample output, likely choices are:
 - Video: `/dev/video0` (C270 HD WEBCAM)
 - Audio: `plughw:3,0` (C270 mic) or `plughw:4,0` (USB PnP mic)
 
+
+This recorder script now mirrors your previously-working ffmpeg profile:
+- `-fflags +genpts+nobuffer+discardcorrupt`
+- `-f v4l2 -ts abs -input_format mjpeg -framerate 20 -video_size 1280x720`
+- `-f alsa -ar 44100 -i plughw:4,0`
+- `-ss 2` output trim
+- `-c:v libx264 -preset ultrafast -tune zerolatency`
+
 ## Create and test recordings directory
 
 ```bash
@@ -101,16 +109,23 @@ If recording fails, test ffmpeg directly with known device values:
 
 ```bash
 cd /home/mayday/interview-recorder
-AUDIO_DEV=plughw:3,0 AUDIO_CHANNELS=1 VIDEO_DEV=/dev/video0 timeout 10s ./scripts/record_interview.sh
+AUDIO_DEV=plughw:4,0 AUDIO_RATE=44100 FPS=20 VIDEO_INPUT_FORMAT=mjpeg OUTPUT_START_TRIM_SECONDS=2 VIDEO_DEV=/dev/video0 timeout 10s ./scripts/record_interview.sh
 ```
 
-If that works, switch to `AUDIO_DEV=plughw:4,0` and compare.
+If that fails, try `AUDIO_DEV=plughw:3,0` instead.
 
 
 If you see `cannot set channel count to 2`, force mono input:
 
 ```bash
 AUDIO_DEV=plughw:3,0 AUDIO_CHANNELS=1 VIDEO_DEV=/dev/video0 ./scripts/record_interview.sh
+```
+
+
+Known-good profile you shared (recommended default):
+
+```bash
+AUDIO_DEV=plughw:4,0 AUDIO_RATE=44100 FPS=20 VIDEO_INPUT_FORMAT=mjpeg OUTPUT_START_TRIM_SECONDS=2 AUDIO_CHANNELS=1 START_DELAY_SECONDS=0 VIDEO_WARMUP_SECONDS=0 VIDEO_DEV=/dev/video0 ./scripts/record_interview.sh
 ```
 
 ## Install as systemd service
@@ -122,7 +137,7 @@ sudo systemctl enable --now interview-recorder.service
 sudo systemctl status interview-recorder.service
 ```
 
-If you change `VIDEO_DEV`/`AUDIO_DEV`/`AUDIO_CHANNELS` in the unit:
+If you change `VIDEO_DEV`/`AUDIO_DEV`/`AUDIO_RATE`/`FPS`/`VIDEO_INPUT_FORMAT`/`AUDIO_CHANNELS`/`START_DELAY_SECONDS`/`VIDEO_WARMUP_SECONDS`/`OUTPUT_START_TRIM_SECONDS` in the unit:
 
 ```bash
 sudo systemctl edit --full interview-recorder.service
