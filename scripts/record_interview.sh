@@ -8,16 +8,16 @@ set -euo pipefail
 
 OUT_DIR="${OUT_DIR:-/recordings}"
 VIDEO_DEV="${VIDEO_DEV:-/dev/video0}"
-AUDIO_DEV="${AUDIO_DEV:-}"
-FPS="${FPS:-30}"
+AUDIO_DEV="${AUDIO_DEV:-plughw:4,0}"
+FPS="${FPS:-20}"
 SIZE="${SIZE:-1280x720}"
-VIDEO_BITRATE="${VIDEO_BITRATE:-3M}"
 AUDIO_BITRATE="${AUDIO_BITRATE:-128k}"
-AUDIO_RATE="${AUDIO_RATE:-48000}"
+AUDIO_RATE="${AUDIO_RATE:-44100}"
 AUDIO_CHANNELS="${AUDIO_CHANNELS:-1}"
-START_DELAY_SECONDS="${START_DELAY_SECONDS:-2}"
-VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-1}"
-OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-1}"
+VIDEO_INPUT_FORMAT="${VIDEO_INPUT_FORMAT:-mjpeg}"
+OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-2}"
+START_DELAY_SECONDS="${START_DELAY_SECONDS:-0}"
+VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-0}"
 
 DATE="$(date +%F)"
 mkdir -p "$OUT_DIR"
@@ -31,25 +31,6 @@ if [[ ! -e "$VIDEO_DEV" ]]; then
   echo "[record_interview] Video device not found: $VIDEO_DEV" >&2
   exit 1
 fi
-
-detect_audio_dev() {
-  if [[ -n "$AUDIO_DEV" ]]; then
-    printf "%s" "$AUDIO_DEV"
-    return
-  fi
-
-  local first_card
-  first_card="$(arecord -l 2>/dev/null | sed -n 's/^card \([0-9]\+\):.*/\1/p' | head -n1 || true)"
-  if [[ -n "$first_card" ]]; then
-    printf "plughw:%s,0" "$first_card"
-    return
-  fi
-
-  # Last-resort fallback for systems where ALSA has a working "default" capture.
-  printf "default"
-}
-
-AUDIO_DEV="$(detect_audio_dev)"
 
 next_index() {
   local max=0
@@ -69,7 +50,8 @@ OUT_FILE="$OUT_DIR/${DATE}_interview_${IDX}.mp4"
 echo "[record_interview] Recording to: $OUT_FILE"
 echo "[record_interview] Using video device: $VIDEO_DEV"
 echo "[record_interview] Using audio device: $AUDIO_DEV"
-echo "[record_interview] Using audio channels: $AUDIO_CHANNELS"
+echo "[record_interview] Using FPS: $FPS"
+echo "[record_interview] Using input format: $VIDEO_INPUT_FORMAT"
 echo "[record_interview] Startup delay (seconds): $START_DELAY_SECONDS"
 echo "[record_interview] Video warmup (seconds): $VIDEO_WARMUP_SECONDS"
 echo "[record_interview] Output start trim (seconds): $OUTPUT_START_TRIM_SECONDS"
@@ -80,16 +62,28 @@ fi
 
 if [[ "$VIDEO_WARMUP_SECONDS" != "0" ]]; then
   echo "[record_interview] Warming camera for $VIDEO_WARMUP_SECONDS second(s)"
-  ffmpeg -hide_banner -loglevel error     -f v4l2 -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV"     -t "$VIDEO_WARMUP_SECONDS" -f null - >/dev/null 2>&1 || true
+  ffmpeg -hide_banner -loglevel error \
+    -f v4l2 -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV" \
+    -t "$VIDEO_WARMUP_SECONDS" -f null - >/dev/null 2>&1 || true
 fi
 
 exec ffmpeg \
-  -hide_banner -loglevel warning \
-  -f v4l2 -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV" \
-  -f alsa -ac "$AUDIO_CHANNELS" -i "$AUDIO_DEV" \
-  -c:v h264_v4l2m2m -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_BITRATE" -bufsize 6M \
-  -c:a aac -b:a "$AUDIO_BITRATE" -ar "$AUDIO_RATE" -ac "$AUDIO_CHANNELS" \
-  -af aresample=async=1:first_pts=0 \
-  -movflags +faststart \
+  -loglevel warning \
+  -fflags +genpts+nobuffer+discardcorrupt \
+  -use_wallclock_as_timestamps 1 \
+  -thread_queue_size 1024 \
+  -f v4l2 -ts abs -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV" \
+  -use_wallclock_as_timestamps 1 \
+  -thread_queue_size 1024 \
+  -f alsa -ar "$AUDIO_RATE" -i "$AUDIO_DEV" \
   -ss "$OUTPUT_START_TRIM_SECONDS" \
+  -c:v libx264 \
+  -preset ultrafast \
+  -tune zerolatency \
+  -vf "scale=in_range=pc:out_range=tv,format=yuv420p" \
+  -c:a aac \
+  -b:a "$AUDIO_BITRATE" \
+  -ac "$AUDIO_CHANNELS" \
+  -af "pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0" \
+  -movflags +faststart \
   "$OUT_FILE"
