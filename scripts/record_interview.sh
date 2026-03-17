@@ -8,7 +8,7 @@ set -euo pipefail
 
 OUT_DIR="${OUT_DIR:-/recordings}"
 VIDEO_DEV="${VIDEO_DEV:-/dev/video0}"
-AUDIO_DEV="${AUDIO_DEV:-default}"
+AUDIO_DEV="${AUDIO_DEV:-}"
 FPS="${FPS:-30}"
 SIZE="${SIZE:-1280x720}"
 VIDEO_BITRATE="${VIDEO_BITRATE:-3M}"
@@ -17,6 +17,35 @@ AUDIO_RATE="${AUDIO_RATE:-48000}"
 
 DATE="$(date +%F)"
 mkdir -p "$OUT_DIR"
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "[record_interview] ffmpeg not found in PATH" >&2
+  exit 1
+fi
+
+if [[ ! -e "$VIDEO_DEV" ]]; then
+  echo "[record_interview] Video device not found: $VIDEO_DEV" >&2
+  exit 1
+fi
+
+detect_audio_dev() {
+  if [[ -n "$AUDIO_DEV" ]]; then
+    printf "%s" "$AUDIO_DEV"
+    return
+  fi
+
+  local first_card
+  first_card="$(arecord -l 2>/dev/null | sed -n 's/^card \([0-9]\+\):.*/\1/p' | head -n1 || true)"
+  if [[ -n "$first_card" ]]; then
+    printf "hw:%s,0" "$first_card"
+    return
+  fi
+
+  # Last-resort fallback for systems where ALSA has a working "default" capture.
+  printf "default"
+}
+
+AUDIO_DEV="$(detect_audio_dev)"
 
 next_index() {
   local max=0
@@ -34,6 +63,8 @@ IDX="$(next_index)"
 OUT_FILE="$OUT_DIR/${DATE}_interview_${IDX}.mp4"
 
 echo "[record_interview] Recording to: $OUT_FILE"
+echo "[record_interview] Using video device: $VIDEO_DEV"
+echo "[record_interview] Using audio device: $AUDIO_DEV"
 
 exec ffmpeg \
   -hide_banner -loglevel warning \
