@@ -6,7 +6,11 @@ After=multi-user.target
 Type=simple
 User=mayday
 WorkingDirectory=/home/mayday/interview-recorder
-ExecStart=/usr/bin/python3 /home/mayday/interview-recorder/scripts/gpio_recorder.py --pin 2 --record-script /home/mayday/interview-recorder/scripts/record_interview.sh --child-log-file /var/log/interview-recorder/ffmpeg.log
+Environment=VIDEO_DEV=/dev/video0
+# Use `arecord -l` to confirm which card is your microphone.
+# Example values from your Pi output: hw:3,0 (C270 mic) or hw:4,0 (USB PnP mic).
+Environment=AUDIO_DEV=hw:3,0
+ExecStart=/usr/bin/python3 /home/mayday/interview-recorder/scripts/gpio_recorder.py --pin 2 --record-script /home/mayday/interview-recorder/scripts/record_interview.sh --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log
 Restart=always
 RestartSec=2
 KillSignal=SIGTERM
