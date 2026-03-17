@@ -1,0 +1,20 @@
+[Unit]
+Description=Interview Recorder GPIO Controller
+After=multi-user.target
+
+[Service]
+Type=simple
+User=mayday
+WorkingDirectory=/home/mayday/interview-recorder
+Environment=VIDEO_DEV=/dev/video0
+# Use `arecord -l` to confirm which card is your microphone.
+# Example values from your Pi output: plughw:3,0 (C270 mic) or plughw:4,0 (USB PnP mic).
+Environment=AUDIO_DEV=plughw:3,0
+Environment=AUDIO_CHANNELS=1
+ExecStart=/usr/bin/python3 /home/mayday/interview-recorder/scripts/gpio_recorder.py --pin 2 --record-script /home/mayday/interview-recorder/scripts/record_interview.sh --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
