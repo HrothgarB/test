@@ -17,6 +17,7 @@ AUDIO_RATE="${AUDIO_RATE:-48000}"
 AUDIO_CHANNELS="${AUDIO_CHANNELS:-1}"
 START_DELAY_SECONDS="${START_DELAY_SECONDS:-2}"
 VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-1}"
+OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-1}"
 
 DATE="$(date +%F)"
 mkdir -p "$OUT_DIR"
@@ -71,6 +72,7 @@ echo "[record_interview] Using audio device: $AUDIO_DEV"
 echo "[record_interview] Using audio channels: $AUDIO_CHANNELS"
 echo "[record_interview] Startup delay (seconds): $START_DELAY_SECONDS"
 echo "[record_interview] Video warmup (seconds): $VIDEO_WARMUP_SECONDS"
+echo "[record_interview] Output start trim (seconds): $OUTPUT_START_TRIM_SECONDS"
 
 if [[ "$START_DELAY_SECONDS" != "0" ]]; then
   sleep "$START_DELAY_SECONDS"
@@ -89,4 +91,5 @@ exec ffmpeg \
   -c:a aac -b:a "$AUDIO_BITRATE" -ar "$AUDIO_RATE" -ac "$AUDIO_CHANNELS" \
   -af aresample=async=1:first_pts=0 \
   -movflags +faststart \
+  -ss "$OUTPUT_START_TRIM_SECONDS" \
   "$OUT_FILE"
