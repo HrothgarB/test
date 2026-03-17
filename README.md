@@ -67,7 +67,7 @@ arecord -l
 
 Based on your sample output, likely choices are:
 - Video: `/dev/video0` (C270 HD WEBCAM)
-- Audio: `hw:3,0` (C270 mic) or `hw:4,0` (USB PnP mic)
+- Audio: `plughw:3,0` (C270 mic) or `plughw:4,0` (USB PnP mic)
 
 ## Create and test recordings directory
 
@@ -101,10 +101,17 @@ If recording fails, test ffmpeg directly with known device values:
 
 ```bash
 cd /home/mayday/interview-recorder
-AUDIO_DEV=hw:3,0 VIDEO_DEV=/dev/video0 timeout 10s ./scripts/record_interview.sh
+AUDIO_DEV=plughw:3,0 AUDIO_CHANNELS=1 VIDEO_DEV=/dev/video0 timeout 10s ./scripts/record_interview.sh
 ```
 
-If that works, switch to `AUDIO_DEV=hw:4,0` and compare.
+If that works, switch to `AUDIO_DEV=plughw:4,0` and compare.
+
+
+If you see `cannot set channel count to 2`, force mono input:
+
+```bash
+AUDIO_DEV=plughw:3,0 AUDIO_CHANNELS=1 VIDEO_DEV=/dev/video0 ./scripts/record_interview.sh
+```
 
 ## Install as systemd service
 
@@ -115,7 +122,7 @@ sudo systemctl enable --now interview-recorder.service
 sudo systemctl status interview-recorder.service
 ```
 
-If you change `VIDEO_DEV`/`AUDIO_DEV` in the unit:
+If you change `VIDEO_DEV`/`AUDIO_DEV`/`AUDIO_CHANNELS` in the unit:
 
 ```bash
 sudo systemctl edit --full interview-recorder.service
