@@ -39,6 +39,7 @@ class RecorderController:
         self.button = Button(button_pin, pull_up=True, bounce_time=bounce_time)
         self._proc: Optional[subprocess.Popen[str]] = None
         self._child_log_handle: Optional[TextIO] = None
+        self._recording_requested = False
         self._lock = threading.Lock()
 
     @property
@@ -62,24 +63,38 @@ class RecorderController:
 
     def start(self) -> None:
         with self._lock:
-            if self.is_recording:
-                logging.info("Record request ignored: already recording")
+            if self._recording_requested:
+                logging.info("Record request ignored: recorder is already in START mode")
                 return
 
+            self._recording_requested = True
             logging.info("Starting recording using %s", self.record_script)
             stdout_target, stderr_target = self._open_child_log()
-            self._proc = subprocess.Popen(
-                [str(self.record_script)],
-                stdout=stdout_target,
-                stderr=stderr_target,
-                text=True,
-            )
+            try:
+                self._proc = subprocess.Popen(
+                    [str(self.record_script)],
+                    stdout=stdout_target,
+                    stderr=stderr_target,
+                    text=True,
+                )
+            except Exception:
+                self._recording_requested = False
+                self._close_child_log()
+                raise
             logging.info("Recording process started (pid=%s)", self._proc.pid)
 
     def stop(self, timeout: float = 20.0) -> None:
         with self._lock:
+            self._recording_requested = False
+
             if not self.is_recording:
-                logging.info("Stop request ignored: no active recording")
+                if self._proc is not None:
+                    logging.warning(
+                        "Stop requested but recorder already exited (returncode=%s)",
+                        self._proc.returncode,
+                    )
+                else:
+                    logging.info("Stop request ignored: no active recording")
                 self._proc = None
                 self._close_child_log()
                 return
@@ -104,7 +119,10 @@ class RecorderController:
                 self._close_child_log()
 
     def toggle(self) -> None:
-        if self.is_recording:
+        # Toggle by requested mode, not by child-process liveness.
+        # This keeps button semantics predictable: 1st press=start mode,
+        # 2nd press=stop mode, even if ffmpeg exited unexpectedly in between.
+        if self._recording_requested:
             self.stop()
         else:
             self.start()
@@ -120,7 +138,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pin", type=int, default=2, help="BCM GPIO pin for the button (default: 2)")
     parser.add_argument(
         "--record-script",
-        default="/home/pi/interview-recorder/scripts/record_interview.sh",
+        default="/home/mayday/interview-recorder/scripts/record_interview.sh",
         help="Path to the recording shell script",
     )
     parser.add_argument(
