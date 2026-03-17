@@ -36,6 +36,11 @@ class RecorderController:
         self.button_pin = button_pin
         self.record_script = record_script
         self.child_log_file = child_log_file
+        if self.child_log_file is not None:
+            # Ensure the log path exists even before first recording starts,
+            # so tools like `tail -f` do not fail with "No such file".
+            self.child_log_file.parent.mkdir(parents=True, exist_ok=True)
+            self.child_log_file.touch(exist_ok=True)
         self.button = Button(button_pin, pull_up=True, bounce_time=bounce_time)
         self._proc: Optional[subprocess.Popen[str]] = None
         self._child_log_handle: Optional[TextIO] = None

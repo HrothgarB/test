@@ -4,7 +4,7 @@ This project turns a Raspberry Pi 4 into a push-button interview recorder applia
 
 ## What is included
 
-- `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings`
+- `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings/YYYY/MM/` using timestamp filenames
 - `scripts/gpio_recorder.py`: GPIO button controller (press once start, press again stop)
 - `systemd/interview-recorder.service`: systemd unit example for boot-time startup
 
@@ -86,6 +86,23 @@ sudo chown -R mayday:mayday /recordings
 
 Ensure your SSD is mounted there at boot (`/etc/fstab`).
 
+
+## Recording output layout
+
+Videos are stored under the base `OUT_DIR` (default `/recordings`) using year/month folders:
+
+```text
+/recordings/YYYY/MM/YYYY-MM-DD_HH-MM-SS.mp4
+```
+
+Example:
+
+```text
+/recordings/2026/03/2026-03-17_14-32-05.mp4
+```
+
+Directories are created automatically, and timestamp collisions are avoided by waiting for the next second when needed.
+
 ## Manual test (before systemd)
 
 ```bash
@@ -145,16 +162,29 @@ sudo systemctl daemon-reload
 sudo systemctl restart interview-recorder.service
 ```
 
+
+If logs show `Permission denied` for `/recordings/...`, fix storage permissions:
+
+```bash
+sudo mkdir -p /recordings
+sudo chown -R mayday:mayday /recordings
+ls -ld /recordings
+```
+
+If `/recordings` is a mounted SSD, set ownership/mount options so it stays writable after reboot (for example `uid=1000,gid=1000` on vfat/exfat mounts).
+
 ## Useful troubleshooting commands
 
 ```bash
 journalctl -u interview-recorder.service -f
 ls -lh /recordings
-tail -f /home/mayday/interview-recorder/logs/ffmpeg.log
+tail -F /home/mayday/interview-recorder/logs/ffmpeg.log
 ```
 
 ## Notes
 
+
+- The controller now creates `logs/ffmpeg.log` at startup, so `tail -F` works even before the first recording.
 - `gpio_recorder.py` sends SIGINT to FFmpeg so MP4 files finalize cleanly.
 - Button presses toggle an internal start/stop mode, so the second press is treated as stop even if ffmpeg exited unexpectedly.
 - If graceful stop hangs, the controller escalates to terminate/kill.

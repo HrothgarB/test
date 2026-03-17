@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Interview recording script
-# - Creates /recordings if missing
-# - Uses date + rolling sequence number for filenames
+# - Creates recording directories if missing
+# - Organizes files by year/month
+# - Uses timestamp filenames (YYYY-MM-DD_HH-MM-SS.mp4)
 # - Captures 720p video + USB audio to MP4
 
 OUT_DIR="${OUT_DIR:-/recordings}"
@@ -19,7 +20,6 @@ OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-2}"
 START_DELAY_SECONDS="${START_DELAY_SECONDS:-0}"
 VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-0}"
 
-DATE="$(date +%F)"
 mkdir -p "$OUT_DIR"
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
@@ -32,22 +32,53 @@ if [[ ! -e "$VIDEO_DEV" ]]; then
   exit 1
 fi
 
-next_index() {
-  local max=0
-  shopt -s nullglob
-  for f in "$OUT_DIR"/${DATE}_interview_*.mp4; do
-    local n="${f##*_}"
-    n="${n%.mp4}"
-    n="$((10#$n))"
-    (( n > max )) && max=$n
+if [[ ! -d "$OUT_DIR" ]]; then
+  echo "[record_interview] Output directory does not exist: $OUT_DIR" >&2
+  exit 1
+fi
+
+if [[ ! -w "$OUT_DIR" ]]; then
+  echo "[record_interview] Output directory is not writable: $OUT_DIR" >&2
+  echo "[record_interview] Fix ownership/permissions for user $(id -un)." >&2
+  exit 1
+fi
+
+next_output_file() {
+  while true; do
+    local ts year month target_dir candidate
+    ts="$(date +%Y-%m-%d_%H-%M-%S)"
+    year="$(date +%Y)"
+    month="$(date +%m)"
+    target_dir="$OUT_DIR/$year/$month"
+    mkdir -p "$target_dir"
+
+    if [[ ! -w "$target_dir" ]]; then
+      echo "[record_interview] Output directory is not writable: $target_dir" >&2
+      exit 1
+    fi
+
+    candidate="$target_dir/$ts.mp4"
+    if [[ ! -e "$candidate" ]]; then
+      printf "%s" "$candidate"
+      return
+    fi
+
+    # If there is a rare same-second collision, wait for next second timestamp.
+    sleep 1
   done
-  printf "%03d" $((max + 1))
 }
 
-IDX="$(next_index)"
-OUT_FILE="$OUT_DIR/${DATE}_interview_${IDX}.mp4"
+OUT_FILE="$(next_output_file)"
+
+# For logging clarity, extract timestamp components from selected output path.
+FILE_NAME="$(basename "$OUT_FILE")"
+YEAR_DIR="$(basename "$(dirname "$(dirname "$OUT_FILE")")")"
+MONTH_DIR="$(basename "$(dirname "$OUT_FILE")")"
 
 echo "[record_interview] Recording to: $OUT_FILE"
+echo "[record_interview] Year directory: $YEAR_DIR"
+echo "[record_interview] Month directory: $MONTH_DIR"
+echo "[record_interview] Filename: $FILE_NAME"
 echo "[record_interview] Using video device: $VIDEO_DEV"
 echo "[record_interview] Using audio device: $AUDIO_DEV"
 echo "[record_interview] Using FPS: $FPS"
