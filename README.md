@@ -117,11 +117,10 @@ chmod +x scripts/record_interview.sh scripts/gpio_recorder.py
 python3 scripts/gpio_recorder.py \
   --pin 2 \
   --record-script /home/mayday/interview-recorder/scripts/record_interview.sh \
-  --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log \
-  --status-led-pin 17
+  --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log
 ```
 
-Press button once to start and again to stop. Use `--status-led-pin -1` to disable LED output.
+Press button once to start and again to stop.
 
 Verify recordings:
 
