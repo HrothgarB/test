@@ -9,14 +9,14 @@ set -euo pipefail
 
 OUT_DIR="${OUT_DIR:-/recordings}"
 VIDEO_DEV="${VIDEO_DEV:-/dev/video0}"
-AUDIO_DEV="${AUDIO_DEV:-plughw:4,0}"
+AUDIO_DEV="${AUDIO_DEV:-}"
 FPS="${FPS:-20}"
 SIZE="${SIZE:-1280x720}"
 AUDIO_BITRATE="${AUDIO_BITRATE:-128k}"
 AUDIO_RATE="${AUDIO_RATE:-44100}"
 AUDIO_CHANNELS="${AUDIO_CHANNELS:-1}"
 VIDEO_INPUT_FORMAT="${VIDEO_INPUT_FORMAT:-mjpeg}"
-OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-2}"
+OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-0}"
 START_DELAY_SECONDS="${START_DELAY_SECONDS:-0}"
 VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-0}"
 
@@ -42,6 +42,42 @@ if [[ ! -w "$OUT_DIR" ]]; then
   echo "[record_interview] Fix ownership/permissions for user $(id -un)." >&2
   exit 1
 fi
+
+list_capture_cards() {
+  arecord -l 2>/dev/null | sed -n 's/^card \([0-9]\+\):.*/\1/p'
+}
+
+resolve_audio_dev() {
+  local requested cards first_card requested_card
+
+  requested="$AUDIO_DEV"
+  cards="$(list_capture_cards || true)"
+
+  if [[ -z "$cards" ]]; then
+    echo "[record_interview] No ALSA capture devices found (arecord -l)." >&2
+    exit 1
+  fi
+
+  if [[ -n "$requested" ]]; then
+    if [[ "$requested" =~ ^plughw:([0-9]+),0$ ]]; then
+      requested_card="${BASH_REMATCH[1]}"
+      if echo "$cards" | grep -qx "$requested_card"; then
+        printf "%s" "$requested"
+        return
+      fi
+      echo "[record_interview] Requested AUDIO_DEV '$requested' is unavailable; falling back." >&2
+    else
+      # Keep explicit non-plughw user selections (e.g. default, hw:1,0, plughw:1,1)
+      printf "%s" "$requested"
+      return
+    fi
+  fi
+
+  first_card="$(echo "$cards" | head -n1)"
+  printf "plughw:%s,0" "$first_card"
+}
+
+AUDIO_DEV="$(resolve_audio_dev)"
 
 next_output_file() {
   while true; do
@@ -98,21 +134,25 @@ if [[ "$VIDEO_WARMUP_SECONDS" != "0" ]]; then
     -t "$VIDEO_WARMUP_SECONDS" -f null - >/dev/null 2>&1 || true
 fi
 
+TRIM_ARGS=()
+if [[ "$OUTPUT_START_TRIM_SECONDS" != "0" ]]; then
+  TRIM_ARGS=(-ss "$OUTPUT_START_TRIM_SECONDS")
+fi
+
 exec ffmpeg \
   -loglevel warning \
-  -fflags +genpts+discardcorrupt \
-  -use_wallclock_as_timestamps 1 \
   -thread_queue_size 1024 \
-  -f v4l2 -ts abs -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV" \
+  -f v4l2 -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV" \
   -thread_queue_size 1024 \
   -f alsa -ar "$AUDIO_RATE" -i "$AUDIO_DEV" \
+  "${TRIM_ARGS[@]}" \
   -c:v libx264 \
   -preset ultrafast \
   -tune zerolatency \
-  -vf "format=yuv420p" \
+  -vf "scale=in_range=pc:out_range=tv,format=yuv420p" \
   -c:a aac \
   -b:a "$AUDIO_BITRATE" \
   -ac "$AUDIO_CHANNELS" \
-  -af "aresample=async=1000:first_pts=0" \
+  -af "pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0" \
   -movflags +faststart \
   "$OUT_FILE"
