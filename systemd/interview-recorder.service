@@ -7,13 +7,12 @@ Type=simple
 User=mayday
 WorkingDirectory=/home/mayday/interview-recorder
 Environment=VIDEO_DEV=/dev/video0
-# Use `arecord -l` to confirm which card is your microphone.
-# Example values from your Pi output: plughw:3,0 (USB PnP mic).
-Environment=AUDIO_DEV=plughw:4,0
+# Optional: set AUDIO_DEV explicitly (example: plughw:3,0).
+# If omitted, the recorder auto-detects the first ALSA capture card from `arecord -l`.
 Environment=AUDIO_CHANNELS=1
 Environment=START_DELAY_SECONDS=0
 Environment=VIDEO_WARMUP_SECONDS=0
-Environment=OUTPUT_START_TRIM_SECONDS=2
+Environment=OUTPUT_START_TRIM_SECONDS=0
 ExecStart=/usr/bin/python3 /home/mayday/interview-recorder/scripts/gpio_recorder.py --pin 2 --record-script /home/mayday/interview-recorder/scripts/record_interview.sh --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log
 Restart=always
 RestartSec=2
