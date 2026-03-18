@@ -173,6 +173,31 @@ ls -ld /recordings
 
 If `/recordings` is a mounted SSD, set ownership/mount options so it stays writable after reboot (for example `uid=1000,gid=1000` on vfat/exfat mounts).
 
+
+If you get `GPIO busy` when starting manually, another process already owns the pin (often the systemd service):
+
+```bash
+sudo systemctl stop interview-recorder.service
+# optional: identify process using GPIO chip
+sudo lsof /dev/gpiochip0
+sudo lsof /dev/gpiochip4
+```
+
+Then run the script manually again. Restart the service when done:
+
+```bash
+sudo systemctl start interview-recorder.service
+```
+
+
+If you hit a `NameError` when launching `gpio_recorder.py`, make sure you are on the latest code:
+
+```bash
+cd /home/mayday/interview-recorder
+git pull
+python3 -m py_compile scripts/gpio_recorder.py
+```
+
 ## Useful troubleshooting commands
 
 ```bash

@@ -9,7 +9,7 @@ set -euo pipefail
 
 OUT_DIR="${OUT_DIR:-/recordings}"
 VIDEO_DEV="${VIDEO_DEV:-/dev/video0}"
-AUDIO_DEV="${AUDIO_DEV:-plughw:4,0}"
+AUDIO_DEV="${AUDIO_DEV:-plughw:3,0}"
 FPS="${FPS:-20}"
 SIZE="${SIZE:-1280x720}"
 AUDIO_BITRATE="${AUDIO_BITRATE:-128k}"

@@ -41,7 +41,13 @@ class RecorderController:
             # so tools like `tail -f` do not fail with "No such file".
             self.child_log_file.parent.mkdir(parents=True, exist_ok=True)
             self.child_log_file.touch(exist_ok=True)
-        self.button = Button(button_pin, pull_up=True, bounce_time=bounce_time)
+        try:
+            self.button = Button(button_pin, pull_up=True, bounce_time=bounce_time)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to initialize GPIO pin {button_pin}. "
+                "It may already be in use by another process/service."
+            ) from exc
         self._proc: Optional[subprocess.Popen[str]] = None
         self._child_log_handle: Optional[TextIO] = None
         self._recording_requested = False
@@ -189,12 +195,28 @@ def main() -> int:
 
     child_log_file = Path(args.child_log_file) if args.child_log_file else None
 
-    controller = RecorderController(
-        button_pin=args.pin,
-        record_script=record_script,
-        bounce_time=args.bounce_time,
-        child_log_file=child_log_file,
-    )
+    controller: Optional[RecorderController] = None
+    try:
+        controller = RecorderController(
+            button_pin=args.pin,
+            record_script=record_script,
+            bounce_time=args.bounce_time,
+            child_log_file=child_log_file,
+        )
+    except RuntimeError as exc:
+        logging.error(str(exc))
+        logging.error(
+            "If running manually, stop the service first: "
+            "sudo systemctl stop interview-recorder.service"
+        )
+        logging.error(
+            "To check current owner: sudo lsof /dev/gpiochip0 (or /dev/gpiochip4 on newer Pi OS)."
+        )
+        return 1
+
+    if controller is None:
+        logging.error("Recorder controller failed to initialize")
+        return 1
 
     stop_event = threading.Event()
 
