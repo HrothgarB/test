@@ -71,10 +71,10 @@ Based on your sample output, likely choices are:
 
 
 This recorder script now mirrors your previously-working ffmpeg profile:
-- `-fflags +genpts+nobuffer+discardcorrupt`
-- `-f v4l2 -ts abs -input_format mjpeg -framerate 20 -video_size 1280x720`
-- `-f alsa -ar 44100 -i plughw:4,0`
-- `-ss 2` output trim
+- Uses a simplified input path (no wallclock/ts-abs/discardcorrupt flags) for cleaner stop behavior
+- `-f v4l2 -input_format mjpeg -framerate 20 -video_size 1280x720`
+- `-f alsa -ar 44100 -i auto-detected card (or AUDIO_DEV override)`
+- Optional output trim via `OUTPUT_START_TRIM_SECONDS` (default `0`)
 - `-c:v libx264 -preset ultrafast -tune zerolatency`
 
 ## Create and test recordings directory
@@ -126,10 +126,10 @@ If recording fails, test ffmpeg directly with known device values:
 
 ```bash
 cd /home/mayday/interview-recorder
-AUDIO_DEV=plughw:4,0 AUDIO_RATE=44100 FPS=20 VIDEO_INPUT_FORMAT=mjpeg OUTPUT_START_TRIM_SECONDS=2 VIDEO_DEV=/dev/video0 timeout 10s ./scripts/record_interview.sh
+AUDIO_RATE=44100 FPS=20 VIDEO_INPUT_FORMAT=mjpeg OUTPUT_START_TRIM_SECONDS=0 VIDEO_DEV=/dev/video0 timeout 10s ./scripts/record_interview.sh
 ```
 
-If that fails, try `AUDIO_DEV=plughw:3,0` instead.
+If auto-detection picks the wrong mic, override explicitly with `AUDIO_DEV=plughw:3,0` or `AUDIO_DEV=plughw:4,0`.
 
 
 If you see `cannot set channel count to 2`, force mono input:
@@ -139,10 +139,10 @@ AUDIO_DEV=plughw:3,0 AUDIO_CHANNELS=1 VIDEO_DEV=/dev/video0 ./scripts/record_int
 ```
 
 
-Known-good profile you shared (recommended default):
+Stable profile (recommended default):
 
 ```bash
-AUDIO_DEV=plughw:4,0 AUDIO_RATE=44100 FPS=20 VIDEO_INPUT_FORMAT=mjpeg OUTPUT_START_TRIM_SECONDS=2 AUDIO_CHANNELS=1 START_DELAY_SECONDS=0 VIDEO_WARMUP_SECONDS=0 VIDEO_DEV=/dev/video0 ./scripts/record_interview.sh
+AUDIO_RATE=44100 FPS=20 VIDEO_INPUT_FORMAT=mjpeg OUTPUT_START_TRIM_SECONDS=0 AUDIO_CHANNELS=1 START_DELAY_SECONDS=0 VIDEO_WARMUP_SECONDS=0 VIDEO_DEV=/dev/video0 ./scripts/record_interview.sh
 ```
 
 ## Install as systemd service
@@ -154,7 +154,7 @@ sudo systemctl enable --now interview-recorder.service
 sudo systemctl status interview-recorder.service
 ```
 
-If you change `VIDEO_DEV`/`AUDIO_DEV`/`AUDIO_RATE`/`FPS`/`VIDEO_INPUT_FORMAT`/`AUDIO_CHANNELS`/`START_DELAY_SECONDS`/`VIDEO_WARMUP_SECONDS`/`OUTPUT_START_TRIM_SECONDS` in the unit:
+If you change `VIDEO_DEV`/`AUDIO_DEV` (optional)/`AUDIO_RATE`/`FPS`/`VIDEO_INPUT_FORMAT`/`AUDIO_CHANNELS`/`START_DELAY_SECONDS`/`VIDEO_WARMUP_SECONDS`/`OUTPUT_START_TRIM_SECONDS` in the unit:
 
 ```bash
 sudo systemctl edit --full interview-recorder.service
@@ -162,6 +162,15 @@ sudo systemctl daemon-reload
 sudo systemctl restart interview-recorder.service
 ```
 
+
+
+If logs show `cannot open audio device plughw:X,0 (No such file or directory)`, your configured card index is wrong for the current boot.
+Use auto-detect (unset `AUDIO_DEV`) or set the current card explicitly:
+
+```bash
+arecord -l
+AUDIO_DEV=plughw:<card>,0 ./scripts/record_interview.sh
+```
 
 If logs show `Permission denied` for `/recordings/...`, fix storage permissions:
 
@@ -213,6 +222,7 @@ tail -F /home/mayday/interview-recorder/logs/ffmpeg.log
 - `gpio_recorder.py` sends SIGINT to FFmpeg so MP4 files finalize cleanly.
 - Button presses toggle an internal start/stop mode, so the second press is treated as stop even if ffmpeg exited unexpectedly.
 - If graceful stop hangs, the controller escalates to terminate/kill.
+- Removed `-use_wallclock_as_timestamps`, `-ts abs`, and `-fflags ... nobuffer/discardcorrupt` from recording defaults because they can make V4L2/ALSA capture less predictable during stop on flaky MJPEG streams.
 - Run compile check without creating cache files:
 
 ```bash
