@@ -100,21 +100,19 @@ fi
 
 exec ffmpeg \
   -loglevel warning \
-  -fflags +genpts+nobuffer+discardcorrupt \
+  -fflags +genpts+discardcorrupt \
   -use_wallclock_as_timestamps 1 \
   -thread_queue_size 1024 \
   -f v4l2 -ts abs -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV" \
-  -use_wallclock_as_timestamps 1 \
   -thread_queue_size 1024 \
   -f alsa -ar "$AUDIO_RATE" -i "$AUDIO_DEV" \
-  -ss "$OUTPUT_START_TRIM_SECONDS" \
   -c:v libx264 \
   -preset ultrafast \
   -tune zerolatency \
-  -vf "scale=in_range=pc:out_range=tv,format=yuv420p" \
+  -vf "format=yuv420p" \
   -c:a aac \
   -b:a "$AUDIO_BITRATE" \
   -ac "$AUDIO_CHANNELS" \
-  -af "pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0" \
+  -af "aresample=async=1000:first_pts=0" \
   -movflags +faststart \
   "$OUT_FILE"
