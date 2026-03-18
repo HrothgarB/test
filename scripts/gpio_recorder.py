@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Optional, TextIO
 
-from gpiozero import Button
+from gpiozero import Button, LED
 
 
 class RecorderController:
@@ -32,10 +32,12 @@ class RecorderController:
         record_script: Path,
         bounce_time: float,
         child_log_file: Optional[Path] = None,
+        status_led_pin: Optional[int] = None,
     ) -> None:
         self.button_pin = button_pin
         self.record_script = record_script
         self.child_log_file = child_log_file
+        self.status_led_pin = status_led_pin
         if self.child_log_file is not None:
             # Ensure the log path exists even before first recording starts,
             # so tools like `tail -f` do not fail with "No such file".
@@ -48,6 +50,7 @@ class RecorderController:
                 f"Failed to initialize GPIO pin {button_pin}. "
                 "It may already be in use by another process/service."
             ) from exc
+        self.status_led: Optional[LED] = LED(status_led_pin) if status_led_pin is not None else None
         self._proc: Optional[subprocess.Popen[str]] = None
         self._child_log_handle: Optional[TextIO] = None
         self._recording_requested = False
@@ -93,6 +96,8 @@ class RecorderController:
                 self._close_child_log()
                 raise
             logging.info("Recording process started (pid=%s)", self._proc.pid)
+            if self.status_led is not None:
+                self.status_led.on()
 
     def stop(self, timeout: float = 20.0) -> None:
         with self._lock:
@@ -108,6 +113,8 @@ class RecorderController:
                     logging.info("Stop request ignored: no active recording")
                 self._proc = None
                 self._close_child_log()
+                if self.status_led is not None:
+                    self.status_led.off()
                 return
 
             assert self._proc is not None
@@ -128,6 +135,8 @@ class RecorderController:
             finally:
                 self._proc = None
                 self._close_child_log()
+                if self.status_led is not None:
+                    self.status_led.off()
 
     def toggle(self) -> None:
         # Toggle by requested mode, not by child-process liveness.
@@ -142,6 +151,9 @@ class RecorderController:
         logging.info("Shutting down controller")
         self.stop()
         self.button.close()
+        if self.status_led is not None:
+            self.status_led.off()
+            self.status_led.close()
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,6 +187,12 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional file path to capture recorder (ffmpeg) output",
     )
+    parser.add_argument(
+        "--status-led-pin",
+        type=int,
+        default=-1,
+        help="Optional BCM GPIO pin for a status LED (-1 disables)",
+    )
     return parser.parse_args()
 
 
@@ -194,6 +212,19 @@ def main() -> int:
         return 1
 
     child_log_file = Path(args.child_log_file) if args.child_log_file else None
+    status_led_pin = args.status_led_pin if args.status_led_pin >= 0 else None
+
+    logging.info("Running recorder self-check")
+    preflight = subprocess.run([str(record_script), "--self-check"], capture_output=True, text=True)
+    if preflight.returncode != 0:
+        logging.error("Recorder self-check failed")
+        if preflight.stdout.strip():
+            logging.error(preflight.stdout.strip())
+        if preflight.stderr.strip():
+            logging.error(preflight.stderr.strip())
+        return 1
+    if preflight.stdout.strip():
+        logging.info("Recorder self-check summary:\n%s", preflight.stdout.strip())
 
     controller: Optional[RecorderController] = None
     try:
@@ -202,6 +233,7 @@ def main() -> int:
             record_script=record_script,
             bounce_time=args.bounce_time,
             child_log_file=child_log_file,
+            status_led_pin=status_led_pin,
         )
     except RuntimeError as exc:
         logging.error(str(exc))

@@ -58,6 +58,12 @@ bash -n record_interview.sh
 sudo apt install -y ffmpeg python3-gpiozero v4l-utils alsa-utils
 ```
 
+## Phase 1 reliability features now included
+
+- Startup self-check runs before GPIO loop starts (camera path, audio capture discovery, output path, free-space threshold).
+- Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
+- Optional status LED support in controller (`--status-led-pin`, default disabled with `-1`).
+
 ## Verify camera and mic devices
 
 ```bash
@@ -154,7 +160,7 @@ sudo systemctl enable --now interview-recorder.service
 sudo systemctl status interview-recorder.service
 ```
 
-If you change `VIDEO_DEV`/`AUDIO_DEV` (optional)/`AUDIO_RATE`/`FPS`/`VIDEO_INPUT_FORMAT`/`AUDIO_CHANNELS`/`START_DELAY_SECONDS`/`VIDEO_WARMUP_SECONDS`/`OUTPUT_START_TRIM_SECONDS` in the unit:
+If you change `VIDEO_DEV`/`AUDIO_DEV` (optional)/`AUDIO_RATE`/`FPS`/`VIDEO_INPUT_FORMAT`/`AUDIO_CHANNELS`/`START_DELAY_SECONDS`/`VIDEO_WARMUP_SECONDS`/`OUTPUT_START_TRIM_SECONDS`/`MIN_FREE_MB`/`STATUS_LED_PIN` in the unit:
 
 ```bash
 sudo systemctl edit --full interview-recorder.service
@@ -170,6 +176,15 @@ Use auto-detect (unset `AUDIO_DEV`) or set the current card explicitly:
 ```bash
 arecord -l
 AUDIO_DEV=plughw:<card>,0 ./scripts/record_interview.sh
+```
+
+
+If logs show low-space errors, check available storage and adjust threshold if needed:
+
+```bash
+df -h /recordings
+# temporary manual test with lower guard
+MIN_FREE_MB=256 ./scripts/record_interview.sh --self-check
 ```
 
 If logs show `Permission denied` for `/recordings/...`, fix storage permissions:

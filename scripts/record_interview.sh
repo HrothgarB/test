@@ -6,8 +6,6 @@ set -euo pipefail
 # - Organizes files by year/month
 # - Uses timestamp filenames (YYYY-MM-DD_HH-MM-SS.mp4)
 # - Captures 720p video + USB audio to MP4
-# - Warms up camera before recording
-# - Trims initial startup second from both video and audio to avoid black frames
 
 OUT_DIR="${OUT_DIR:-/recordings}"
 VIDEO_DEV="${VIDEO_DEV:-/dev/video0}"
@@ -18,9 +16,10 @@ AUDIO_BITRATE="${AUDIO_BITRATE:-128k}"
 AUDIO_RATE="${AUDIO_RATE:-44100}"
 AUDIO_CHANNELS="${AUDIO_CHANNELS:-1}"
 VIDEO_INPUT_FORMAT="${VIDEO_INPUT_FORMAT:-mjpeg}"
-OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-1}"
+OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-0}"
 START_DELAY_SECONDS="${START_DELAY_SECONDS:-0}"
-VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-2}"
+VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-0}"
+MIN_FREE_MB="${MIN_FREE_MB:-1024}"
 
 mkdir -p "$OUT_DIR"
 
@@ -44,6 +43,20 @@ if [[ ! -w "$OUT_DIR" ]]; then
   echo "[record_interview] Fix ownership/permissions for user $(id -un)." >&2
   exit 1
 fi
+
+check_free_space_mb() {
+  local avail_mb
+  avail_mb="$(df -Pm "$OUT_DIR" | awk 'NR==2 {print $4}')"
+  if [[ -z "$avail_mb" ]]; then
+    echo "[record_interview] Unable to determine free space for $OUT_DIR" >&2
+    exit 1
+  fi
+  if (( avail_mb < MIN_FREE_MB )); then
+    echo "[record_interview] Not enough free space in $OUT_DIR: ${avail_mb}MB available, ${MIN_FREE_MB}MB required" >&2
+    exit 1
+  fi
+  echo "[record_interview] Free space check passed: ${avail_mb}MB available"
+}
 
 list_capture_cards() {
   arecord -l 2>/dev/null | sed -n 's/^card \([0-9]\+\):.*/\1/p'
@@ -80,6 +93,18 @@ resolve_audio_dev() {
 }
 
 AUDIO_DEV="$(resolve_audio_dev)"
+
+check_free_space_mb
+
+if [[ "${1:-}" == "--self-check" ]]; then
+  AUDIO_DEV="$(resolve_audio_dev)"
+  echo "[record_interview] Self-check OK"
+  echo "[record_interview] Video device: $VIDEO_DEV"
+  echo "[record_interview] Audio device: $AUDIO_DEV"
+  echo "[record_interview] Output dir: $OUT_DIR"
+  echo "[record_interview] Min free space (MB): $MIN_FREE_MB"
+  exit 0
+fi
 
 next_output_file() {
   while true; do
