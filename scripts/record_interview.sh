@@ -6,6 +6,8 @@ set -euo pipefail
 # - Organizes files by year/month
 # - Uses timestamp filenames (YYYY-MM-DD_HH-MM-SS.mp4)
 # - Captures 720p video + USB audio to MP4
+# - Warms up camera before recording
+# - Trims initial startup second from both video and audio to avoid black frames
 
 OUT_DIR="${OUT_DIR:-/recordings}"
 VIDEO_DEV="${VIDEO_DEV:-/dev/video0}"
@@ -16,9 +18,9 @@ AUDIO_BITRATE="${AUDIO_BITRATE:-128k}"
 AUDIO_RATE="${AUDIO_RATE:-44100}"
 AUDIO_CHANNELS="${AUDIO_CHANNELS:-1}"
 VIDEO_INPUT_FORMAT="${VIDEO_INPUT_FORMAT:-mjpeg}"
-OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-0}"
+OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-1}"
 START_DELAY_SECONDS="${START_DELAY_SECONDS:-0}"
-VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-0}"
+VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-2}"
 
 mkdir -p "$OUT_DIR"
 
