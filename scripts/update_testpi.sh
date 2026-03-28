@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVICE_NAME="${SERVICE_NAME:-interview-recorder.service}"
+SYSTEMD_UNIT_PATH="${SYSTEMD_UNIT_PATH:-/etc/systemd/system/$SERVICE_NAME}"
 
 cd "$REPO_ROOT"
 
@@ -29,6 +30,15 @@ bash -n scripts/record_interview.sh
 
 echo "[update_testpi] Verifying Python syntax"
 PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/gpio_recorder.py
+
+if [[ -f "systemd/$SERVICE_NAME" ]]; then
+  echo "[update_testpi] Refreshing systemd unit at $SYSTEMD_UNIT_PATH"
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    cp "systemd/$SERVICE_NAME" "$SYSTEMD_UNIT_PATH"
+  else
+    sudo cp "systemd/$SERVICE_NAME" "$SYSTEMD_UNIT_PATH"
+  fi
+fi
 
 load_state=""
 if command -v systemctl >/dev/null 2>&1; then

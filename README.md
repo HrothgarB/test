@@ -56,6 +56,8 @@ cd /home/mayday/interview-recorder
 ./scripts/update_testpi.sh
 ```
 
+That helper also refreshes the installed systemd unit so changes like the LED pin make it onto the Pi.
+
 For a fresh Pi, use the installer helper:
 
 ```bash
