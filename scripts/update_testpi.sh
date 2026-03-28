@@ -38,8 +38,10 @@ fi
 if [[ "$load_state" == "loaded" ]]; then
   echo "[update_testpi] Restarting $SERVICE_NAME"
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    systemctl daemon-reload
     systemctl restart "$SERVICE_NAME"
   else
+    sudo systemctl daemon-reload
     sudo systemctl restart "$SERVICE_NAME"
   fi
 else

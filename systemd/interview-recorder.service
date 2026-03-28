@@ -5,6 +5,7 @@ After=multi-user.target
 [Service]
 Type=simple
 User=mayday
+SupplementaryGroups=audio video gpio
 WorkingDirectory=/home/mayday/interview-recorder
 Environment=VIDEO_DEV=/dev/video0
 # Optional: set AUDIO_DEV explicitly (example: plughw:3,0).

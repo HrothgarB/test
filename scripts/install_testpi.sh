@@ -9,6 +9,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVICE_NAME="${SERVICE_NAME:-interview-recorder.service}"
 INSTALL_DIR="${INSTALL_DIR:-/home/mayday/interview-recorder}"
 RECORDINGS_DIR="${RECORDINGS_DIR:-/recordings}"
+SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-$(id -un)}}"
 
 cd "$REPO_ROOT"
 
@@ -30,6 +31,9 @@ if command -v apt-get >/dev/null 2>&1; then
 else
   echo "[install_testpi] apt-get not found; skipping dependency install"
 fi
+
+echo "[install_testpi] Ensuring $SERVICE_USER can access audio/video/gpio devices"
+sudo usermod -aG audio,video,gpio "$SERVICE_USER"
 
 echo "[install_testpi] Creating recordings directory: $RECORDINGS_DIR"
 sudo mkdir -p "$RECORDINGS_DIR"

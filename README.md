@@ -95,6 +95,8 @@ bash -n record_interview.sh
 sudo apt install -y ffmpeg python3-gpiozero v4l-utils alsa-utils
 ```
 
+The systemd service now runs with `audio`, `video`, and `gpio` access so the button, camera, and microphone can be reached without the process silently failing on permissions.
+
 ## Phase 1 reliability features now included
 
 - Startup self-check runs before GPIO loop starts (camera path, audio capture discovery, output path, free-space threshold).
