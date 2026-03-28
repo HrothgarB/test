@@ -52,8 +52,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "[install_testpi] Creating optional environment file: $ENV_FILE"
   sudo tee "$ENV_FILE" >/dev/null <<'EOF'
 # Pi-local overrides for interview-recorder.service.
-# This default enables LAN multicast livestreaming for VLC/OBS viewers.
-STREAM_URL=udp://239.1.1.1:5000?pkt_size=1316&ttl=1
+# This default streams to the current LAN viewer machine.
+STREAM_URL=udp://192.168.5.223:5000?pkt_size=1316
 EOF
   sudo chmod 600 "$ENV_FILE"
 else

@@ -4,7 +4,7 @@ This project turns a Raspberry Pi 4 into a push-button interview recorder applia
 
 ## What is included
 
-- `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings/YYYY/MM/` and can optionally multicast a live LAN stream for VLC/OBS
+- `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings/YYYY/MM/` and can optionally stream live to a LAN viewer for VLC/OBS
 - `scripts/gpio_recorder.py`: GPIO button controller (green ready, red recording, blue not-ready, built-in diagnostics)
 - `scripts/install_testpi.sh`: one-time Pi setup helper
 - `scripts/update_testpi.sh`: fast-forward update helper for an existing Pi install
@@ -127,7 +127,7 @@ Diagnostics currently include CPU temperature, load average, memory availability
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
 - Status LED behavior supported in controller: green when ready, red while recording, blue when not ready.
 - systemd unit default sets RGB LED pins to `17`/`27`/`22`, controller logging to `logs/controller.log`, and periodic diagnostics every 30 seconds.
-- Fresh installs now create `/etc/interview-recorder.env` with a default LAN multicast `STREAM_URL` while keeping the local MP4 recording.
+- Fresh installs now create `/etc/interview-recorder.env` with a default LAN `STREAM_URL` to the current viewer machine while keeping the local MP4 recording.
 
 ## Verify camera and mic devices
 
@@ -154,10 +154,10 @@ This recorder can also broadcast a live LAN stream while still saving the normal
 The first version is meant for app-based viewers such as VLC or OBS, not web browsers.
 
 The systemd service reads Pi-local overrides from `/etc/interview-recorder.env`.
-Fresh installs create that file with this default multicast stream target:
+Fresh installs create that file with this default LAN stream target:
 
 ```bash
-STREAM_URL=udp://239.1.1.1:5000?pkt_size=1316&ttl=1
+STREAM_URL=udp://192.168.5.223:5000?pkt_size=1316
 ```
 
 To change it later:
@@ -173,16 +173,11 @@ sudo systemctl daemon-reload
 sudo systemctl restart interview-recorder.service
 ```
 
-Viewer apps on the same LAN can open:
-
-```text
-udp://@239.1.1.1:5000
-```
+Viewer apps on the same LAN can open `udp://@:5000`.
 
 Notes:
 
 - Local recording remains the source of truth. If the LAN stream fails, the MP4 recording keeps running.
-- Multicast must be allowed by your LAN equipment and Wi-Fi setup.
 - `STREAM_URL` can be left unset or empty to disable livestreaming completely.
 
 ## Create and test recordings directory
