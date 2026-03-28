@@ -10,6 +10,7 @@ SERVICE_NAME="${SERVICE_NAME:-interview-recorder.service}"
 INSTALL_DIR="${INSTALL_DIR:-/home/mayday/interview-recorder}"
 RECORDINGS_DIR="${RECORDINGS_DIR:-/recordings}"
 SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-$(id -un)}}"
+ENV_FILE="${ENV_FILE:-/etc/interview-recorder.env}"
 
 cd "$REPO_ROOT"
 
@@ -45,6 +46,18 @@ fi
 if [[ "$REPO_ROOT" != "$INSTALL_DIR" ]]; then
   echo "[install_testpi] Warning: repo root is $REPO_ROOT"
   echo "[install_testpi] Expected install dir is $INSTALL_DIR"
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "[install_testpi] Creating optional environment file: $ENV_FILE"
+  sudo tee "$ENV_FILE" >/dev/null <<'EOF'
+# Optional Pi-local overrides for interview-recorder.service.
+# Enable LAN multicast livestreaming for VLC/OBS viewers:
+# STREAM_URL=udp://239.1.1.1:5000?pkt_size=1316&ttl=1
+EOF
+  sudo chmod 600 "$ENV_FILE"
+else
+  echo "[install_testpi] Preserving existing environment file: $ENV_FILE"
 fi
 
 echo "[install_testpi] Verifying scripts"

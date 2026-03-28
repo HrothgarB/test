@@ -4,7 +4,7 @@ This project turns a Raspberry Pi 4 into a push-button interview recorder applia
 
 ## What is included
 
-- `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings/YYYY/MM/` using timestamp filenames
+- `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings/YYYY/MM/` and can optionally multicast a live LAN stream for VLC/OBS
 - `scripts/gpio_recorder.py`: GPIO button controller (green ready, red recording, blue not-ready, built-in diagnostics)
 - `scripts/install_testpi.sh`: one-time Pi setup helper
 - `scripts/update_testpi.sh`: fast-forward update helper for an existing Pi install
@@ -57,6 +57,7 @@ cd /home/mayday/interview-recorder
 ```
 
 That helper also refreshes the installed systemd unit so changes like the LED pin make it onto the Pi.
+Your Pi-local `/etc/interview-recorder.env` settings are preserved.
 
 If `git pull` complains about local changes in `scripts/install_testpi.sh`, `scripts/update_testpi.sh`, or `scripts/record_interview.sh`, reset just those managed helper files and try again:
 
@@ -113,7 +114,7 @@ The systemd service now runs with `audio`, `video`, and `gpio` access so the but
 ## Logs and diagnostics
 
 - `logs/controller.log`: controller events, RGB state changes, and periodic system diagnostics
-- `logs/ffmpeg.log`: recorder subprocess output
+- `logs/ffmpeg.log`: recorder subprocess output, including LAN livestream startup/errors
 - `journalctl -u interview-recorder.service -f`: live systemd view
 - `tail -F logs/controller.log`: controller and diagnostics log
 - `tail -F logs/ffmpeg.log`: ffmpeg capture log
@@ -126,6 +127,7 @@ Diagnostics currently include CPU temperature, load average, memory availability
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
 - Status LED behavior supported in controller: green when ready, red while recording, blue when not ready.
 - systemd unit default sets RGB LED pins to `17`/`27`/`22`, controller logging to `logs/controller.log`, and periodic diagnostics every 30 seconds.
+- Optional LAN multicast livestream can be enabled with `STREAM_URL` in `/etc/interview-recorder.env` while keeping the local MP4 recording.
 
 ## Verify camera and mic devices
 
@@ -145,6 +147,41 @@ This recorder script now mirrors your previously-working ffmpeg profile:
 - `-f alsa -ar 44100 -i auto-detected card (or AUDIO_DEV override)`
 - Optional output trim via `OUTPUT_START_TRIM_SECONDS` (default `0`)
 - `-c:v libx264 -preset ultrafast -tune zerolatency`
+
+## Optional LAN livestream for VLC or OBS
+
+This recorder can also broadcast a live LAN stream while still saving the normal MP4 locally.
+The first version is meant for app-based viewers such as VLC or OBS, not web browsers.
+
+The systemd service reads optional Pi-local overrides from `/etc/interview-recorder.env`.
+To enable multicast streaming, add:
+
+```bash
+sudoedit /etc/interview-recorder.env
+```
+
+```bash
+STREAM_URL=udp://239.1.1.1:5000?pkt_size=1316&ttl=1
+```
+
+Then reload the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart interview-recorder.service
+```
+
+Viewer apps on the same LAN can open:
+
+```text
+udp://@239.1.1.1:5000
+```
+
+Notes:
+
+- Local recording remains the source of truth. If the LAN stream fails, the MP4 recording keeps running.
+- Multicast must be allowed by your LAN equipment and Wi-Fi setup.
+- `STREAM_URL` can be left unset or empty to disable livestreaming completely.
 
 ## Create and test recordings directory
 
@@ -237,6 +274,9 @@ sudo systemctl edit --full interview-recorder.service
 sudo systemctl daemon-reload
 sudo systemctl restart interview-recorder.service
 ```
+
+If you prefer to keep local overrides out of the unit, place them in `/etc/interview-recorder.env` instead.
+That file is loaded automatically by the service and is the recommended place for `STREAM_URL`.
 
 
 

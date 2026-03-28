@@ -20,6 +20,7 @@ OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-0}"
 START_DELAY_SECONDS="${START_DELAY_SECONDS:-0}"
 VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-0}"
 MIN_FREE_MB="${MIN_FREE_MB:-1024}"
+STREAM_URL="${STREAM_URL:-}"
 
 mkdir -p "$OUT_DIR"
 
@@ -56,6 +57,23 @@ check_free_space_mb() {
     exit 1
   fi
   echo "[record_interview] Free space check passed: ${avail_mb}MB available"
+}
+
+summarize_stream_url() {
+  local url rest hostport
+  url="$1"
+  rest="${url#*://}"
+  if [[ "$rest" == "$url" ]]; then
+    printf "%s" "$url"
+    return
+  fi
+
+  hostport="${rest%%[/?]*}"
+  if [[ -n "$hostport" ]]; then
+    printf "%s" "$hostport"
+  else
+    printf "%s" "$url"
+  fi
 }
 
 list_capture_cards() {
@@ -103,6 +121,11 @@ if [[ "${1:-}" == "--self-check" ]]; then
   echo "[record_interview] Audio device: $AUDIO_DEV"
   echo "[record_interview] Output dir: $OUT_DIR"
   echo "[record_interview] Min free space (MB): $MIN_FREE_MB"
+  if [[ -n "$STREAM_URL" ]]; then
+    echo "[record_interview] Livestream target: $(summarize_stream_url "$STREAM_URL")"
+  else
+    echo "[record_interview] Livestream target: disabled"
+  fi
   exit 0
 fi
 
@@ -149,6 +172,11 @@ echo "[record_interview] Using input format: $VIDEO_INPUT_FORMAT"
 echo "[record_interview] Startup delay (seconds): $START_DELAY_SECONDS"
 echo "[record_interview] Video warmup (seconds): $VIDEO_WARMUP_SECONDS"
 echo "[record_interview] Output start trim (seconds): $OUTPUT_START_TRIM_SECONDS"
+if [[ -n "$STREAM_URL" ]]; then
+  echo "[record_interview] Livestream enabled to: $(summarize_stream_url "$STREAM_URL")"
+else
+  echo "[record_interview] Livestream disabled"
+fi
 
 if [[ "$START_DELAY_SECONDS" != "0" ]]; then
   sleep "$START_DELAY_SECONDS"
@@ -166,20 +194,35 @@ if [[ "$OUTPUT_START_TRIM_SECONDS" != "0" ]]; then
   TRIM_ARGS=(-ss "$OUTPUT_START_TRIM_SECONDS")
 fi
 
+FFMPEG_INPUT_ARGS=(
+  -loglevel warning
+  -thread_queue_size 1024
+  -f v4l2 -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV"
+  -thread_queue_size 1024
+  -f alsa -ar "$AUDIO_RATE" -i "$AUDIO_DEV"
+  "${TRIM_ARGS[@]}"
+  -c:v libx264
+  -preset ultrafast
+  -tune zerolatency
+  -vf "scale=in_range=pc:out_range=tv,format=yuv420p"
+  -c:a aac
+  -b:a "$AUDIO_BITRATE"
+  -ac "$AUDIO_CHANNELS"
+  -af "pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0"
+)
+
+if [[ -n "$STREAM_URL" ]]; then
+  TEE_OUTPUTS="[f=mp4:movflags=+faststart]$OUT_FILE|[f=mpegts:bsfs/v=dump_extra=freq=keyframe:onfail=ignore:use_fifo=1]$STREAM_URL"
+  exec ffmpeg \
+    "${FFMPEG_INPUT_ARGS[@]}" \
+    -flags +global_header \
+    -map 0:v:0 \
+    -map 1:a:0 \
+    -f tee \
+    "$TEE_OUTPUTS"
+fi
+
 exec ffmpeg \
-  -loglevel warning \
-  -thread_queue_size 1024 \
-  -f v4l2 -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV" \
-  -thread_queue_size 1024 \
-  -f alsa -ar "$AUDIO_RATE" -i "$AUDIO_DEV" \
-  "${TRIM_ARGS[@]}" \
-  -c:v libx264 \
-  -preset ultrafast \
-  -tune zerolatency \
-  -vf "scale=in_range=pc:out_range=tv,format=yuv420p" \
-  -c:a aac \
-  -b:a "$AUDIO_BITRATE" \
-  -ac "$AUDIO_CHANNELS" \
-  -af "pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0" \
+  "${FFMPEG_INPUT_ARGS[@]}" \
   -movflags +faststart \
   "$OUT_FILE"
