@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Optional, TextIO
 
-from gpiozero import Button, LED
+from gpiozero import Button, LED, RGBLED
 
 
 class RecorderController:
@@ -33,11 +33,17 @@ class RecorderController:
         bounce_time: float,
         child_log_file: Optional[Path] = None,
         status_led_pin: Optional[int] = None,
+        status_led_red_pin: Optional[int] = None,
+        status_led_green_pin: Optional[int] = None,
+        status_led_blue_pin: Optional[int] = None,
     ) -> None:
         self.button_pin = button_pin
         self.record_script = record_script
         self.child_log_file = child_log_file
         self.status_led_pin = status_led_pin
+        self.status_led_red_pin = status_led_red_pin
+        self.status_led_green_pin = status_led_green_pin
+        self.status_led_blue_pin = status_led_blue_pin
         if self.child_log_file is not None:
             # Ensure the log path exists even before first recording starts,
             # so tools like `tail -f` do not fail with "No such file".
@@ -50,11 +56,32 @@ class RecorderController:
                 f"Failed to initialize GPIO pin {button_pin}. "
                 "It may already be in use by another process/service."
             ) from exc
-        self.status_led: Optional[LED] = LED(status_led_pin) if status_led_pin is not None else None
+        self.status_led: Optional[LED] = None
+        self.status_rgb_led: Optional[RGBLED] = None
+        if (
+            status_led_red_pin is not None
+            or status_led_green_pin is not None
+            or status_led_blue_pin is not None
+        ):
+            if not all(
+                pin is not None
+                for pin in (status_led_red_pin, status_led_green_pin, status_led_blue_pin)
+            ):
+                raise RuntimeError(
+                    "All RGB LED pins must be provided together: red, green, and blue."
+                )
+            self.status_rgb_led = RGBLED(
+                red=status_led_red_pin,
+                green=status_led_green_pin,
+                blue=status_led_blue_pin,
+            )
+        elif status_led_pin is not None:
+            self.status_led = LED(status_led_pin)
         self._proc: Optional[subprocess.Popen[str]] = None
         self._child_log_handle: Optional[TextIO] = None
         self._recording_requested = False
         self._lock = threading.Lock()
+        self._status_state: Optional[str] = None
         self._set_led_ready()
 
     @property
@@ -77,22 +104,49 @@ class RecorderController:
             self._child_log_handle = None
 
     def _set_led_ready(self) -> None:
-        """Set LED to the 'ready' state: solid ON."""
-        if self.status_led is None:
-            return
-        self.status_led.on()
+        """Set LED to the 'ready' state: solid green."""
+        self._set_led_state("ready")
 
     def _set_led_recording(self) -> None:
-        """Set LED to the 'recording' state: slow flashing."""
-        if self.status_led is None:
-            return
-        self.status_led.blink(on_time=1.0, off_time=1.0, background=True)
+        """Set LED to the 'recording' state: solid red."""
+        self._set_led_state("recording")
 
-    def start(self) -> None:
+    def _set_led_not_ready(self) -> None:
+        """Set LED to the 'not ready' state: solid blue."""
+        self._set_led_state("not_ready")
+
+    def _set_led_state(self, state: str) -> None:
+        if self._status_state == state:
+            return
+
+        self._status_state = state
+
+        if self.status_rgb_led is not None:
+            if state == "ready":
+                self.status_rgb_led.color = (0, 1, 0)
+            elif state == "recording":
+                self.status_rgb_led.color = (1, 0, 0)
+            elif state == "not_ready":
+                self.status_rgb_led.color = (0, 0, 1)
+            else:
+                raise ValueError(f"Unknown LED state: {state}")
+        elif self.status_led is not None:
+            if state == "ready":
+                self.status_led.on()
+            elif state == "recording":
+                self.status_led.blink(on_time=1.0, off_time=1.0, background=True)
+            elif state == "not_ready":
+                self.status_led.off()
+            else:
+                raise ValueError(f"Unknown LED state: {state}")
+
+        logging.info("Status indicator set to %s", state)
+
+    def start(self) -> bool:
         with self._lock:
             if self._recording_requested:
                 logging.info("Record request ignored: recorder is already in START mode")
-                return
+                return True
 
             self._recording_requested = True
             logging.info("Starting recording using %s", self.record_script)
@@ -107,10 +161,12 @@ class RecorderController:
             except Exception:
                 self._recording_requested = False
                 self._close_child_log()
-                self._set_led_ready()
-                raise
+                self._set_led_not_ready()
+                logging.exception("Failed to start recording using %s", self.record_script)
+                return False
             logging.info("Recording process started (pid=%s)", self._proc.pid)
             self._set_led_recording()
+            return True
 
     def stop(self, timeout: float = 20.0) -> None:
         with self._lock:
@@ -149,6 +205,24 @@ class RecorderController:
                 self._close_child_log()
                 self._set_led_ready()
 
+    def refresh_status(self) -> None:
+        with self._lock:
+            if self._proc is None:
+                return
+
+            returncode = self._proc.poll()
+            if returncode is None:
+                return
+
+            logging.warning(
+                "Recording process exited unexpectedly (returncode=%s)",
+                returncode,
+            )
+            self._proc = None
+            self._close_child_log()
+            self._recording_requested = False
+            self._set_led_not_ready()
+
     def toggle(self) -> None:
         # Toggle by requested mode, not by child-process liveness.
         # This keeps button semantics predictable: 1st press=start mode,
@@ -162,6 +236,9 @@ class RecorderController:
         logging.info("Shutting down controller")
         self.stop()
         self.button.close()
+        if self.status_rgb_led is not None:
+            self.status_rgb_led.off()
+            self.status_rgb_led.close()
         if self.status_led is not None:
             self.status_led.off()
             self.status_led.close()
@@ -204,6 +281,24 @@ def parse_args() -> argparse.Namespace:
         default=-1,
         help="Optional BCM GPIO pin for a status LED (-1 disables)",
     )
+    parser.add_argument(
+        "--status-led-red-pin",
+        type=int,
+        default=-1,
+        help="Optional BCM GPIO pin for the red channel of an RGB status LED (-1 disables)",
+    )
+    parser.add_argument(
+        "--status-led-green-pin",
+        type=int,
+        default=-1,
+        help="Optional BCM GPIO pin for the green channel of an RGB status LED (-1 disables)",
+    )
+    parser.add_argument(
+        "--status-led-blue-pin",
+        type=int,
+        default=-1,
+        help="Optional BCM GPIO pin for the blue channel of an RGB status LED (-1 disables)",
+    )
     return parser.parse_args()
 
 
@@ -224,6 +319,21 @@ def main() -> int:
 
     child_log_file = Path(args.child_log_file) if args.child_log_file else None
     status_led_pin = args.status_led_pin if args.status_led_pin >= 0 else None
+    rgb_led_pins = None
+    rgb_pin_values = (
+        args.status_led_red_pin,
+        args.status_led_green_pin,
+        args.status_led_blue_pin,
+    )
+    if any(pin >= 0 for pin in rgb_pin_values):
+        if not all(pin >= 0 for pin in rgb_pin_values):
+            logging.error("Provide all three RGB LED pins together or leave them all disabled.")
+            return 1
+        rgb_led_pins = rgb_pin_values
+
+    if status_led_pin is not None and rgb_led_pins is not None:
+        logging.error("Use either the single status LED pin or the RGB LED pins, not both.")
+        return 1
 
     logging.info("Running recorder self-check")
     preflight = subprocess.run([str(record_script), "--self-check"], capture_output=True, text=True)
@@ -245,6 +355,9 @@ def main() -> int:
             bounce_time=args.bounce_time,
             child_log_file=child_log_file,
             status_led_pin=status_led_pin,
+            status_led_red_pin=rgb_led_pins[0] if rgb_led_pins is not None else None,
+            status_led_green_pin=rgb_led_pins[1] if rgb_led_pins is not None else None,
+            status_led_blue_pin=rgb_led_pins[2] if rgb_led_pins is not None else None,
         )
     except RuntimeError as exc:
         logging.error(str(exc))
@@ -275,6 +388,7 @@ def main() -> int:
 
     try:
         while not stop_event.is_set():
+            controller.refresh_status()
             time.sleep(args.poll_interval)
     finally:
         controller.shutdown()

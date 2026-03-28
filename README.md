@@ -5,7 +5,7 @@ This project turns a Raspberry Pi 4 into a push-button interview recorder applia
 ## What is included
 
 - `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings/YYYY/MM/` using timestamp filenames
-- `scripts/gpio_recorder.py`: GPIO button controller (press once start, press again stop)
+- `scripts/gpio_recorder.py`: GPIO button controller (green ready, red recording, blue not-ready)
 - `scripts/install_testpi.sh`: one-time Pi setup helper
 - `scripts/update_testpi.sh`: fast-forward update helper for an existing Pi install
 - `systemd/interview-recorder.service`: systemd unit example for boot-time startup
@@ -114,8 +114,8 @@ The systemd service now runs with `audio`, `video`, and `gpio` access so the but
 
 - Startup self-check runs before GPIO loop starts (camera path, audio capture discovery, output path, free-space threshold).
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
-- Status LED behavior supported in controller: solid ON when ready, slow blinking while recording.
-- systemd unit default sets `STATUS_LED_PIN=17` (use `-1` to disable LED output).
+- Status LED behavior supported in controller: green when ready, red while recording, blue when not ready.
+- systemd unit default sets RGB LED pins to `17`/`27`/`22`.
 
 ## Verify camera and mic devices
 
@@ -166,17 +166,17 @@ Directories are created automatically, and timestamp collisions are avoided by w
 
 ```bash
 cd /home/mayday/interview-recorder
-chmod +x scripts/record_interview.sh scripts/gpio_recorder.py
 python3 scripts/gpio_recorder.py \
   --pin 2 \
   --record-script /home/mayday/interview-recorder/scripts/record_interview.sh \
   --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log \
-  --status-led-pin 17
+  --status-led-red-pin 17 \
+  --status-led-green-pin 27 \
+  --status-led-blue-pin 22
 ```
 
 Press button once to start and again to stop.
-When LED is enabled, it is solid ON in ready state and blinks while recording.
-Use `--status-led-pin -1` to disable LED output.
+When LED is enabled, it is green when ready, red while recording, and blue when not ready.
 
 Verify recordings:
 
@@ -216,7 +216,7 @@ sudo systemctl enable --now interview-recorder.service
 sudo systemctl status interview-recorder.service
 ```
 
-If you change `VIDEO_DEV`/`AUDIO_DEV` (optional)/`AUDIO_RATE`/`FPS`/`VIDEO_INPUT_FORMAT`/`AUDIO_CHANNELS`/`START_DELAY_SECONDS`/`VIDEO_WARMUP_SECONDS`/`OUTPUT_START_TRIM_SECONDS`/`MIN_FREE_MB`/`STATUS_LED_PIN` in the unit:
+If you change `VIDEO_DEV`/`AUDIO_DEV` (optional)/`AUDIO_RATE`/`FPS`/`VIDEO_INPUT_FORMAT`/`AUDIO_CHANNELS`/`START_DELAY_SECONDS`/`VIDEO_WARMUP_SECONDS`/`OUTPUT_START_TRIM_SECONDS`/`MIN_FREE_MB`/`STATUS_LED_RED_PIN`/`STATUS_LED_GREEN_PIN`/`STATUS_LED_BLUE_PIN` in the unit:
 
 ```bash
 sudo systemctl edit --full interview-recorder.service
