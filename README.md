@@ -57,7 +57,7 @@ cd /home/mayday/interview-recorder
 ```
 
 That helper also refreshes the installed systemd unit so changes like the LED pin make it onto the Pi.
-Your Pi-local `/etc/interview-recorder.env` settings are preserved.
+Your Pi-local `/etc/interview-recorder.env` settings are preserved, including any custom `STREAM_URL`.
 
 If `git pull` complains about local changes in `scripts/install_testpi.sh`, `scripts/update_testpi.sh`, or `scripts/record_interview.sh`, reset just those managed helper files and try again:
 
@@ -127,7 +127,7 @@ Diagnostics currently include CPU temperature, load average, memory availability
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
 - Status LED behavior supported in controller: green when ready, red while recording, blue when not ready.
 - systemd unit default sets RGB LED pins to `17`/`27`/`22`, controller logging to `logs/controller.log`, and periodic diagnostics every 30 seconds.
-- Optional LAN multicast livestream can be enabled with `STREAM_URL` in `/etc/interview-recorder.env` while keeping the local MP4 recording.
+- Fresh installs now create `/etc/interview-recorder.env` with a default LAN multicast `STREAM_URL` while keeping the local MP4 recording.
 
 ## Verify camera and mic devices
 
@@ -153,15 +153,17 @@ This recorder script now mirrors your previously-working ffmpeg profile:
 This recorder can also broadcast a live LAN stream while still saving the normal MP4 locally.
 The first version is meant for app-based viewers such as VLC or OBS, not web browsers.
 
-The systemd service reads optional Pi-local overrides from `/etc/interview-recorder.env`.
-To enable multicast streaming, add:
-
-```bash
-sudoedit /etc/interview-recorder.env
-```
+The systemd service reads Pi-local overrides from `/etc/interview-recorder.env`.
+Fresh installs create that file with this default multicast stream target:
 
 ```bash
 STREAM_URL=udp://239.1.1.1:5000?pkt_size=1316&ttl=1
+```
+
+To change it later:
+
+```bash
+sudoedit /etc/interview-recorder.env
 ```
 
 Then reload the service:
