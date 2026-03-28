@@ -48,6 +48,7 @@ if [[ "$REPO_ROOT" != "$INSTALL_DIR" ]]; then
 fi
 
 echo "[install_testpi] Verifying scripts"
+chmod +x scripts/install_testpi.sh scripts/update_testpi.sh scripts/record_interview.sh
 bash -n scripts/record_interview.sh
 bash -n scripts/update_testpi.sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/gpio_recorder.py

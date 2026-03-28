@@ -53,7 +53,6 @@ Or use the helper script:
 
 ```bash
 cd /home/mayday/interview-recorder
-chmod +x scripts/update_testpi.sh
 ./scripts/update_testpi.sh
 ```
 
@@ -61,8 +60,14 @@ For a fresh Pi, use the installer helper:
 
 ```bash
 cd /home/mayday/interview-recorder
-chmod +x scripts/install_testpi.sh
 ./scripts/install_testpi.sh
+```
+
+If your filesystem stripped execute bits, run them through `bash` instead:
+
+```bash
+bash scripts/update_testpi.sh
+bash scripts/install_testpi.sh
 ```
 
 If the repo was copied as a ZIP and does not have git history, back it up and re-clone it instead:
