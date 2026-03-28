@@ -45,7 +45,7 @@ If this repo was cloned with `git`, update it in place on the Pi:
 cd /home/mayday/interview-recorder
 git pull --ff-only
 bash -n scripts/record_interview.sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/gpio_recorder.py
+PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/http_mjpeg_preview.py scripts/gpio_recorder.py
 sudo systemctl restart interview-recorder.service
 ```
 
@@ -127,7 +127,7 @@ Diagnostics currently include CPU temperature, load average, memory availability
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
 - Status LED behavior supported in controller: green when ready, red while recording, blue when not ready.
 - systemd unit default sets RGB LED pins to `17`/`27`/`22`, controller logging to `logs/controller.log`, and periodic diagnostics every 30 seconds.
-- Fresh installs now create `/etc/interview-recorder.env` with a default LAN `STREAM_URL` to the current viewer machine while keeping the local MP4 recording.
+- Fresh installs now create `/etc/interview-recorder.env` with a default HTTP MJPEG `STREAM_URL` while keeping the local MP4 recording.
 
 ## Verify camera and mic devices
 
@@ -150,38 +150,38 @@ This recorder script now mirrors your previously-working ffmpeg profile:
 
 ## Optional LAN livestream for VLC or OBS
 
-This recorder can also broadcast a live LAN stream while still saving the normal MP4 locally.
-The first version is meant for app-based viewers such as VLC or OBS, not web browsers.
+This recorder can also publish a live HTTP MJPEG preview while still saving the normal MP4 locally.
+The preview is designed for app-based viewers such as VLC or OBS on the same LAN.
 
 The systemd service reads Pi-local overrides from `/etc/interview-recorder.env`.
-Fresh installs create that file with this default LAN stream target:
+Fresh installs create that file with this default preview target:
 
 ```bash
-STREAM_URL=udp://192.168.5.223:5000?pkt_size=1316
+STREAM_URL=http://testpi:8080/stream.mjpg
 ```
 
-The live view uses a lightweight preview profile rather than the full recording quality:
-`426x240`, `5 fps`, and a much lower video/audio bitrate so VLC has less to chew on.
+The live preview uses a lightweight profile rather than the full recording quality:
+`426x240`, `5 fps`, and a lower JPEG quality so it stays responsive on the LAN.
 
 To change it later:
 
 ```bash
 sudoedit /etc/interview-recorder.env
-```
-
-Then reload the service:
-
-```bash
-sudo systemctl daemon-reload
 sudo systemctl restart interview-recorder.service
 ```
 
-Viewer apps on the same LAN can open `udp://@:5000`.
+Viewer apps on the same LAN can open:
+
+```text
+http://testpi:8080/stream.mjpg
+```
+
+If your LAN does not resolve `testpi`, replace it with the Pi's IP address.
 
 Notes:
 
-- Local recording remains the source of truth. If the LAN stream fails, the MP4 recording keeps running.
-- The live stream is intentionally a low-bandwidth preview, not a full-quality copy of the local MP4.
+- Local recording remains the source of truth. If the preview fails, the MP4 recording keeps running.
+- The live preview is intentionally lightweight, not a full-quality copy of the local MP4.
 - `STREAM_URL` can be left unset or empty to disable livestreaming completely.
 
 ## Create and test recordings directory
@@ -278,6 +278,7 @@ sudo systemctl restart interview-recorder.service
 
 If you prefer to keep local overrides out of the unit, place them in `/etc/interview-recorder.env` instead.
 That file is loaded automatically by the service and is the recommended place for `STREAM_URL`.
+If you edit only that env file, just restart the service; `daemon-reload` is only needed when the unit file itself changes.
 
 
 

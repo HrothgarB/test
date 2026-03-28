@@ -52,8 +52,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "[install_testpi] Creating optional environment file: $ENV_FILE"
   sudo tee "$ENV_FILE" >/dev/null <<'EOF'
 # Pi-local overrides for interview-recorder.service.
-# This default streams to the current LAN viewer machine.
-STREAM_URL=udp://192.168.5.223:5000?pkt_size=1316
+# This default starts the HTTP MJPEG preview on the Pi itself.
+STREAM_URL=http://testpi:8080/stream.mjpg
 EOF
   sudo chmod 600 "$ENV_FILE"
 else
@@ -62,9 +62,8 @@ fi
 
 echo "[install_testpi] Verifying scripts"
 chmod +x scripts/install_testpi.sh scripts/update_testpi.sh scripts/record_interview.sh
-bash -n scripts/record_interview.sh
-bash -n scripts/update_testpi.sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/gpio_recorder.py
+bash -n scripts/install_testpi.sh scripts/update_testpi.sh scripts/record_interview.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/http_mjpeg_preview.py scripts/gpio_recorder.py
 
 if [[ -f "systemd/$SERVICE_NAME" ]]; then
   echo "[install_testpi] Installing systemd unit"
