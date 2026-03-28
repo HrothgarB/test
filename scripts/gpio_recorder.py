@@ -55,6 +55,7 @@ class RecorderController:
         self._child_log_handle: Optional[TextIO] = None
         self._recording_requested = False
         self._lock = threading.Lock()
+        self._set_led_ready()
 
     @property
     def is_recording(self) -> bool:
@@ -75,6 +76,18 @@ class RecorderController:
             self._child_log_handle.close()
             self._child_log_handle = None
 
+    def _set_led_ready(self) -> None:
+        """Set LED to the 'ready' state: solid ON."""
+        if self.status_led is None:
+            return
+        self.status_led.on()
+
+    def _set_led_recording(self) -> None:
+        """Set LED to the 'recording' state: flashing."""
+        if self.status_led is None:
+            return
+        self.status_led.blink(on_time=0.25, off_time=0.25, background=True)
+
     def start(self) -> None:
         with self._lock:
             if self._recording_requested:
@@ -94,10 +107,10 @@ class RecorderController:
             except Exception:
                 self._recording_requested = False
                 self._close_child_log()
+                self._set_led_ready()
                 raise
             logging.info("Recording process started (pid=%s)", self._proc.pid)
-            if self.status_led is not None:
-                self.status_led.on()
+            self._set_led_recording()
 
     def stop(self, timeout: float = 20.0) -> None:
         with self._lock:
@@ -113,8 +126,7 @@ class RecorderController:
                     logging.info("Stop request ignored: no active recording")
                 self._proc = None
                 self._close_child_log()
-                if self.status_led is not None:
-                    self.status_led.off()
+                self._set_led_ready()
                 return
 
             assert self._proc is not None
@@ -135,8 +147,7 @@ class RecorderController:
             finally:
                 self._proc = None
                 self._close_child_log()
-                if self.status_led is not None:
-                    self.status_led.off()
+                self._set_led_ready()
 
     def toggle(self) -> None:
         # Toggle by requested mode, not by child-process liveness.

@@ -62,7 +62,8 @@ sudo apt install -y ffmpeg python3-gpiozero v4l-utils alsa-utils
 
 - Startup self-check runs before GPIO loop starts (camera path, audio capture discovery, output path, free-space threshold).
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
-- Optional status LED support in controller (`--status-led-pin`, default disabled with `-1`).
+- Status LED behavior supported in controller: solid ON when ready, blinking while recording.
+- systemd unit default sets `STATUS_LED_PIN=17` (use `-1` to disable LED output).
 
 ## Verify camera and mic devices
 
@@ -117,10 +118,13 @@ chmod +x scripts/record_interview.sh scripts/gpio_recorder.py
 python3 scripts/gpio_recorder.py \
   --pin 2 \
   --record-script /home/mayday/interview-recorder/scripts/record_interview.sh \
-  --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log
+  --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log \
+  --status-led-pin 17
 ```
 
 Press button once to start and again to stop.
+When LED is enabled, it is solid ON in ready state and blinks while recording.
+Use `--status-led-pin -1` to disable LED output.
 
 Verify recordings:
 
