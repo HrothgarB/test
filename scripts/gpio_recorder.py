@@ -11,16 +11,154 @@ What this program does:
 from __future__ import annotations
 
 import argparse
+import os
 import logging
+import platform
 import signal
 import subprocess
 import sys
 import threading
 import time
+import shutil
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional, TextIO
 
 from gpiozero import Button, LED, RGBLED
+
+
+CPU_TEMP_PATH = Path("/sys/class/thermal/thermal_zone0/temp")
+MEMINFO_PATH = Path("/proc/meminfo")
+UPTIME_PATH = Path("/proc/uptime")
+
+
+def _read_text(path: Path) -> Optional[str]:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def _read_cpu_temperature_c() -> Optional[float]:
+    raw_temp = _read_text(CPU_TEMP_PATH)
+    if raw_temp is not None:
+        try:
+            return int(raw_temp) / 1000.0
+        except ValueError:
+            pass
+
+    vcgencmd = shutil.which("vcgencmd")
+    if vcgencmd is None:
+        return None
+
+    try:
+        result = subprocess.run(
+            [vcgencmd, "measure_temp"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    output = result.stdout.strip()
+    if "temp=" not in output:
+        return None
+
+    temp_value = output.split("temp=", 1)[1].split("'", 1)[0].strip()
+    try:
+        return float(temp_value)
+    except ValueError:
+        return None
+
+
+def _read_throttled_status() -> Optional[str]:
+    vcgencmd = shutil.which("vcgencmd")
+    if vcgencmd is None:
+        return None
+
+    try:
+        result = subprocess.run(
+            [vcgencmd, "get_throttled"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    return result.stdout.strip()
+
+
+def _read_load_average() -> Optional[tuple[float, float, float]]:
+    try:
+        return os.getloadavg()
+    except OSError:
+        return None
+
+
+def _read_meminfo_mb() -> tuple[Optional[float], Optional[float]]:
+    available_mb: Optional[float] = None
+    total_mb: Optional[float] = None
+
+    try:
+        with MEMINFO_PATH.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    available_mb = float(line.split()[1]) / 1024.0
+                elif line.startswith("MemTotal:"):
+                    total_mb = float(line.split()[1]) / 1024.0
+                if available_mb is not None and total_mb is not None:
+                    break
+    except (OSError, ValueError):
+        return None, None
+
+    return available_mb, total_mb
+
+
+def _read_system_uptime_seconds() -> Optional[float]:
+    raw_uptime = _read_text(UPTIME_PATH)
+    if raw_uptime is None:
+        return None
+
+    try:
+        return float(raw_uptime.split()[0])
+    except (IndexError, ValueError):
+        return None
+
+
+def _format_duration(seconds: float) -> str:
+    whole_seconds = int(seconds)
+    days, remainder = divmod(whole_seconds, 24 * 60 * 60)
+    hours, remainder = divmod(remainder, 60 * 60)
+    minutes, secs = divmod(remainder, 60)
+    if days:
+        return f"{days}d{hours:02d}h{minutes:02d}m{secs:02d}s"
+    if hours:
+        return f"{hours}h{minutes:02d}m{secs:02d}s"
+    return f"{minutes}m{secs:02d}s"
+
+
+def _read_disk_usage_mb(path: Path) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    target = path if path.exists() else path.parent
+    try:
+        usage = shutil.disk_usage(target)
+    except OSError:
+        return None, None, None
+
+    return (
+        usage.total / (1024.0 * 1024.0),
+        usage.used / (1024.0 * 1024.0),
+        usage.free / (1024.0 * 1024.0),
+    )
 
 
 class RecorderController:
@@ -32,6 +170,8 @@ class RecorderController:
         record_script: Path,
         bounce_time: float,
         child_log_file: Optional[Path] = None,
+        recordings_dir: Optional[Path] = None,
+        diagnostics_interval_seconds: float = 30.0,
         status_led_pin: Optional[int] = None,
         status_led_red_pin: Optional[int] = None,
         status_led_green_pin: Optional[int] = None,
@@ -40,6 +180,8 @@ class RecorderController:
         self.button_pin = button_pin
         self.record_script = record_script
         self.child_log_file = child_log_file
+        self.recordings_dir = recordings_dir if recordings_dir is not None else Path("/recordings")
+        self.diagnostics_interval_seconds = max(0.0, diagnostics_interval_seconds)
         self.status_led_pin = status_led_pin
         self.status_led_red_pin = status_led_red_pin
         self.status_led_green_pin = status_led_green_pin
@@ -82,6 +224,7 @@ class RecorderController:
         self._recording_requested = False
         self._lock = threading.Lock()
         self._status_state: Optional[str] = None
+        self._next_diagnostics_log_at = 0.0
         self._set_led_ready()
 
     @property
@@ -142,6 +285,73 @@ class RecorderController:
 
         logging.info("Status indicator set to %s", state)
 
+    def _build_diagnostics_message(self) -> str:
+        parts = [
+            f"state={self._status_state or 'unknown'}",
+            f"requested={str(self._recording_requested).lower()}",
+            f"recording={str(self.is_recording).lower()}",
+        ]
+
+        cpu_temp_c = _read_cpu_temperature_c()
+        parts.append(f"cpu_temp={cpu_temp_c:.1f}C" if cpu_temp_c is not None else "cpu_temp=unknown")
+
+        load_average = _read_load_average()
+        if load_average is not None:
+            parts.append(
+                "load={:.2f}/{:.2f}/{:.2f}".format(
+                    load_average[0],
+                    load_average[1],
+                    load_average[2],
+                )
+            )
+        else:
+            parts.append("load=unknown")
+
+        mem_available_mb, mem_total_mb = _read_meminfo_mb()
+        if mem_available_mb is not None and mem_total_mb is not None:
+            parts.append(f"mem_avail={mem_available_mb:.0f}MB/{mem_total_mb:.0f}MB")
+        else:
+            parts.append("mem=unknown")
+
+        disk_total_mb, disk_used_mb, disk_free_mb = _read_disk_usage_mb(self.recordings_dir)
+        if (
+            disk_total_mb is not None
+            and disk_used_mb is not None
+            and disk_free_mb is not None
+            and disk_total_mb > 0
+        ):
+            used_pct = disk_used_mb / disk_total_mb * 100.0
+            parts.append(f"recordings_free={disk_free_mb:.0f}MB/{disk_total_mb:.0f}MB")
+            parts.append(f"recordings_used={used_pct:.1f}%")
+        else:
+            parts.append("recordings_disk=unknown")
+
+        uptime_seconds = _read_system_uptime_seconds()
+        parts.append(f"uptime={_format_duration(uptime_seconds)}" if uptime_seconds is not None else "uptime=unknown")
+
+        throttled_status = _read_throttled_status()
+        parts.append(f"throttled={throttled_status}" if throttled_status else "throttled=unknown")
+
+        return " ".join(parts)
+
+    def _emit_diagnostics(self, reason: str) -> None:
+        prefix = f"Diagnostics ({reason})" if reason else "Diagnostics"
+        logging.info("%s: %s", prefix, self._build_diagnostics_message())
+
+    def log_diagnostics(self, reason: str) -> None:
+        self._emit_diagnostics(reason)
+        if self.diagnostics_interval_seconds > 0:
+            self._next_diagnostics_log_at = time.monotonic() + self.diagnostics_interval_seconds
+
+    def maybe_log_diagnostics(self) -> None:
+        if self.diagnostics_interval_seconds <= 0:
+            return
+        now = time.monotonic()
+        if now < self._next_diagnostics_log_at:
+            return
+        self._emit_diagnostics("periodic")
+        self._next_diagnostics_log_at = now + self.diagnostics_interval_seconds
+
     def start(self) -> bool:
         with self._lock:
             if self._recording_requested:
@@ -163,9 +373,11 @@ class RecorderController:
                 self._close_child_log()
                 self._set_led_not_ready()
                 logging.exception("Failed to start recording using %s", self.record_script)
+                self.log_diagnostics("start failed")
                 return False
             logging.info("Recording process started (pid=%s)", self._proc.pid)
             self._set_led_recording()
+            self.log_diagnostics("recording started")
             return True
 
     def stop(self, timeout: float = 20.0) -> None:
@@ -204,6 +416,7 @@ class RecorderController:
                 self._proc = None
                 self._close_child_log()
                 self._set_led_ready()
+                self.log_diagnostics("recording stopped")
 
     def refresh_status(self) -> None:
         with self._lock:
@@ -222,6 +435,7 @@ class RecorderController:
             self._close_child_log()
             self._recording_requested = False
             self._set_led_not_ready()
+            self.log_diagnostics("unexpected exit")
 
     def toggle(self) -> None:
         # Toggle by requested mode, not by child-process liveness.
@@ -276,6 +490,22 @@ def parse_args() -> argparse.Namespace:
         help="Optional file path to capture recorder (ffmpeg) output",
     )
     parser.add_argument(
+        "--controller-log-file",
+        default="",
+        help="Optional file path for controller logs and diagnostics",
+    )
+    parser.add_argument(
+        "--recordings-dir",
+        default="/recordings",
+        help="Path to the recordings directory for disk diagnostics (default: /recordings)",
+    )
+    parser.add_argument(
+        "--diagnostics-interval",
+        type=float,
+        default=30.0,
+        help="Seconds between periodic diagnostics logs (default: 30)",
+    )
+    parser.add_argument(
         "--status-led-pin",
         type=int,
         default=-1,
@@ -302,14 +532,45 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
+def _configure_logging(log_level: str, controller_log_file: Optional[Path]) -> None:
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+    if controller_log_file is not None:
+        try:
+            controller_log_file.parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(
+                RotatingFileHandler(
+                    controller_log_file,
+                    maxBytes=1_000_000,
+                    backupCount=5,
+                    encoding="utf-8",
+                )
+            )
+        except OSError as exc:
+            print(
+                f"[gpio_recorder] Unable to open controller log file {controller_log_file}: {exc}",
+                file=sys.stderr,
+            )
+
     logging.basicConfig(
-        level=getattr(logging, args.log_level),
+        level=getattr(logging, log_level),
         format="%(asctime)s %(levelname)s %(message)s",
+        handlers=handlers,
+        force=True,
     )
 
+
+def main() -> int:
+    args = parse_args()
+
     record_script = Path(args.record_script)
+    controller_log_file = (
+        Path(args.controller_log_file)
+        if args.controller_log_file
+        else record_script.parent.parent / "logs" / "controller.log"
+    )
+    _configure_logging(args.log_level, controller_log_file)
+
     if not record_script.exists():
         logging.error("Record script does not exist: %s", record_script)
         return 1
@@ -354,6 +615,8 @@ def main() -> int:
             record_script=record_script,
             bounce_time=args.bounce_time,
             child_log_file=child_log_file,
+            recordings_dir=Path(args.recordings_dir),
+            diagnostics_interval_seconds=args.diagnostics_interval,
             status_led_pin=status_led_pin,
             status_led_red_pin=rgb_led_pins[0] if rgb_led_pins is not None else None,
             status_led_green_pin=rgb_led_pins[1] if rgb_led_pins is not None else None,
@@ -384,11 +647,28 @@ def main() -> int:
     signal.signal(signal.SIGTERM, handle_exit)
 
     controller.button.when_pressed = controller.toggle
-    logging.info("Recorder ready on GPIO pin %s. Press button to start/stop.", args.pin)
+    logging.info(
+        "Recorder ready on GPIO pin %s. Press button to start/stop. Controller log: %s",
+        args.pin,
+        controller_log_file,
+    )
+    logging.info(
+        "Diagnostics enabled: interval=%.0fs recordings_dir=%s",
+        args.diagnostics_interval,
+        args.recordings_dir,
+    )
+    logging.info(
+        "System profile: host=%s kernel=%s arch=%s",
+        platform.node(),
+        platform.release(),
+        platform.machine(),
+    )
+    controller.log_diagnostics("startup")
 
     try:
         while not stop_event.is_set():
             controller.refresh_status()
+            controller.maybe_log_diagnostics()
             time.sleep(args.poll_interval)
     finally:
         controller.shutdown()

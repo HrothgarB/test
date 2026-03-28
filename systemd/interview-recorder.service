@@ -15,10 +15,13 @@ Environment=START_DELAY_SECONDS=0
 Environment=VIDEO_WARMUP_SECONDS=0
 Environment=OUTPUT_START_TRIM_SECONDS=0
 Environment=MIN_FREE_MB=1024
+Environment=RECORDINGS_DIR=/recordings
+Environment=CONTROLLER_LOG_FILE=logs/controller.log
+Environment=DIAGNOSTICS_INTERVAL_SECONDS=30
 Environment=STATUS_LED_RED_PIN=17
 Environment=STATUS_LED_GREEN_PIN=27
 Environment=STATUS_LED_BLUE_PIN=22
-ExecStart=/usr/bin/python3 /home/mayday/interview-recorder/scripts/gpio_recorder.py --pin 2 --record-script /home/mayday/interview-recorder/scripts/record_interview.sh --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log --status-led-red-pin ${STATUS_LED_RED_PIN} --status-led-green-pin ${STATUS_LED_GREEN_PIN} --status-led-blue-pin ${STATUS_LED_BLUE_PIN}
+ExecStart=/usr/bin/python3 /home/mayday/interview-recorder/scripts/gpio_recorder.py --pin 2 --record-script /home/mayday/interview-recorder/scripts/record_interview.sh --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log --controller-log-file ${CONTROLLER_LOG_FILE} --recordings-dir ${RECORDINGS_DIR} --diagnostics-interval ${DIAGNOSTICS_INTERVAL_SECONDS} --status-led-red-pin ${STATUS_LED_RED_PIN} --status-led-green-pin ${STATUS_LED_GREEN_PIN} --status-led-blue-pin ${STATUS_LED_BLUE_PIN}
 Restart=always
 RestartSec=2
 KillSignal=SIGTERM
