@@ -21,6 +21,11 @@ START_DELAY_SECONDS="${START_DELAY_SECONDS:-0}"
 VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-0}"
 MIN_FREE_MB="${MIN_FREE_MB:-1024}"
 STREAM_URL="${STREAM_URL:-}"
+STREAM_SIZE="${STREAM_SIZE:-426x240}"
+STREAM_FPS="${STREAM_FPS:-5}"
+STREAM_VIDEO_BITRATE="${STREAM_VIDEO_BITRATE:-300k}"
+STREAM_AUDIO_BITRATE="${STREAM_AUDIO_BITRATE:-64k}"
+STREAM_BUF_SIZE="${STREAM_BUF_SIZE:-600k}"
 
 mkdir -p "$OUT_DIR"
 
@@ -173,7 +178,7 @@ echo "[record_interview] Startup delay (seconds): $START_DELAY_SECONDS"
 echo "[record_interview] Video warmup (seconds): $VIDEO_WARMUP_SECONDS"
 echo "[record_interview] Output start trim (seconds): $OUTPUT_START_TRIM_SECONDS"
 if [[ -n "$STREAM_URL" ]]; then
-  echo "[record_interview] Livestream compatibility mode: 1-second GOP and repeated MPEG-TS headers"
+  echo "[record_interview] Livestream compatibility mode: 1-second GOP, repeated MPEG-TS headers, and reduced stream profile ${STREAM_SIZE}@${STREAM_FPS}fps"
   echo "[record_interview] Livestream enabled to: $(summarize_stream_url "$STREAM_URL")"
 else
   echo "[record_interview] Livestream disabled"
@@ -202,31 +207,58 @@ FFMPEG_INPUT_ARGS=(
   -thread_queue_size 1024
   -f alsa -ar "$AUDIO_RATE" -i "$AUDIO_DEV"
   "${TRIM_ARGS[@]}"
-  -c:v libx264
-  -preset ultrafast
-  -tune zerolatency
-  -vf "scale=in_range=pc:out_range=tv,format=yuv420p"
-  -c:a aac
-  -b:a "$AUDIO_BITRATE"
-  -ac "$AUDIO_CHANNELS"
-  -af "pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0"
 )
 
 if [[ -n "$STREAM_URL" ]]; then
-  TEE_OUTPUTS="[f=mp4:movflags=+faststart]$OUT_FILE|[f=mpegts:bsfs/v=dump_extra=freq=keyframe:mpegts_flags=resend_headers+pat_pmt_at_frames:onfail=ignore:use_fifo=1]$STREAM_URL"
+  FILTER_COMPLEX="[0:v]split=2[vrecord_src][vstream_src];[vrecord_src]scale=in_range=pc:out_range=tv,format=yuv420p[vrecord];[vstream_src]scale=${STREAM_SIZE},fps=${STREAM_FPS},format=yuv420p[vstream];[1:a]pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0,asplit=2[arecord][astream]"
   exec ffmpeg \
     "${FFMPEG_INPUT_ARGS[@]}" \
-    -flags +global_header \
+    -filter_complex "$FILTER_COMPLEX" \
+    -map "[vrecord]" \
+    -map "[arecord]" \
+    -c:v libx264 \
+    -preset ultrafast \
+    -tune zerolatency \
     -g "$FPS" \
     -keyint_min "$FPS" \
     -sc_threshold 0 \
-    -map 0:v:0 \
-    -map 1:a:0 \
-    -f tee \
-    "$TEE_OUTPUTS"
+    -c:a aac \
+    -b:a "$AUDIO_BITRATE" \
+    -ac "$AUDIO_CHANNELS" \
+    -movflags +faststart \
+    "$OUT_FILE" \
+    -map "[vstream]" \
+    -map "[astream]" \
+    -c:v libx264 \
+    -preset ultrafast \
+    -tune zerolatency \
+    -profile:v baseline \
+    -level 3.0 \
+    -g "$STREAM_FPS" \
+    -keyint_min "$STREAM_FPS" \
+    -sc_threshold 0 \
+    -pix_fmt yuv420p \
+    -b:v "$STREAM_VIDEO_BITRATE" \
+    -maxrate "$STREAM_VIDEO_BITRATE" \
+    -bufsize "$STREAM_BUF_SIZE" \
+    -c:a aac \
+    -b:a "$STREAM_AUDIO_BITRATE" \
+    -ac "$AUDIO_CHANNELS" \
+    -f mpegts \
+    -mpegts_flags resend_headers+pat_pmt_at_frames \
+    "$STREAM_URL"
+  exit 0
 fi
 
 exec ffmpeg \
   "${FFMPEG_INPUT_ARGS[@]}" \
+  -c:v libx264 \
+  -preset ultrafast \
+  -tune zerolatency \
+  -vf "scale=in_range=pc:out_range=tv,format=yuv420p" \
+  -c:a aac \
+  -b:a "$AUDIO_BITRATE" \
+  -ac "$AUDIO_CHANNELS" \
+  -af "pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0" \
   -movflags +faststart \
   "$OUT_FILE"

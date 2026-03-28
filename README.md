@@ -160,6 +160,9 @@ Fresh installs create that file with this default LAN stream target:
 STREAM_URL=udp://192.168.5.223:5000?pkt_size=1316
 ```
 
+The live view uses a lightweight preview profile rather than the full recording quality:
+`426x240`, `5 fps`, and a much lower video/audio bitrate so VLC has less to chew on.
+
 To change it later:
 
 ```bash
@@ -178,6 +181,7 @@ Viewer apps on the same LAN can open `udp://@:5000`.
 Notes:
 
 - Local recording remains the source of truth. If the LAN stream fails, the MP4 recording keeps running.
+- The live stream is intentionally a low-bandwidth preview, not a full-quality copy of the local MP4.
 - `STREAM_URL` can be left unset or empty to disable livestreaming completely.
 
 ## Create and test recordings directory
