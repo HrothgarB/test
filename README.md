@@ -114,7 +114,7 @@ The systemd service now runs with `audio`, `video`, and `gpio` access so the but
 
 - Startup self-check runs before GPIO loop starts (camera path, audio capture discovery, output path, free-space threshold).
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
-- Status LED behavior supported in controller: solid ON when ready, blinking while recording.
+- Status LED behavior supported in controller: solid ON when ready, slow blinking while recording.
 - systemd unit default sets `STATUS_LED_PIN=17` (use `-1` to disable LED output).
 
 ## Verify camera and mic devices

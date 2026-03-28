@@ -83,10 +83,10 @@ class RecorderController:
         self.status_led.on()
 
     def _set_led_recording(self) -> None:
-        """Set LED to the 'recording' state: flashing."""
+        """Set LED to the 'recording' state: slow flashing."""
         if self.status_led is None:
             return
-        self.status_led.blink(on_time=0.25, off_time=0.25, background=True)
+        self.status_led.blink(on_time=1.0, off_time=1.0, background=True)
 
     def start(self) -> None:
         with self._lock:
