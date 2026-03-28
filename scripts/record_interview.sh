@@ -173,6 +173,7 @@ echo "[record_interview] Startup delay (seconds): $START_DELAY_SECONDS"
 echo "[record_interview] Video warmup (seconds): $VIDEO_WARMUP_SECONDS"
 echo "[record_interview] Output start trim (seconds): $OUTPUT_START_TRIM_SECONDS"
 if [[ -n "$STREAM_URL" ]]; then
+  echo "[record_interview] Livestream compatibility mode: 1-second GOP and repeated MPEG-TS headers"
   echo "[record_interview] Livestream enabled to: $(summarize_stream_url "$STREAM_URL")"
 else
   echo "[record_interview] Livestream disabled"
@@ -212,10 +213,13 @@ FFMPEG_INPUT_ARGS=(
 )
 
 if [[ -n "$STREAM_URL" ]]; then
-  TEE_OUTPUTS="[f=mp4:movflags=+faststart]$OUT_FILE|[f=mpegts:bsfs/v=dump_extra=freq=keyframe:onfail=ignore:use_fifo=1]$STREAM_URL"
+  TEE_OUTPUTS="[f=mp4:movflags=+faststart]$OUT_FILE|[f=mpegts:bsfs/v=dump_extra=freq=keyframe:mpegts_flags=resend_headers+pat_pmt_at_frames:onfail=ignore:use_fifo=1]$STREAM_URL"
   exec ffmpeg \
     "${FFMPEG_INPUT_ARGS[@]}" \
     -flags +global_header \
+    -g "$FPS" \
+    -keyint_min "$FPS" \
+    -sc_threshold 0 \
     -map 0:v:0 \
     -map 1:a:0 \
     -f tee \
