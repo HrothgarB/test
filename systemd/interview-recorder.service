@@ -1,0 +1,24 @@
+[Unit]
+Description=Interview Recorder GPIO Controller
+After=multi-user.target
+
+[Service]
+Type=simple
+User=mayday
+WorkingDirectory=/home/mayday/interview-recorder
+Environment=VIDEO_DEV=/dev/video0
+# Optional: set AUDIO_DEV explicitly (example: plughw:3,0).
+# If omitted, the recorder auto-detects the first ALSA capture card from `arecord -l`.
+Environment=AUDIO_CHANNELS=1
+Environment=START_DELAY_SECONDS=0
+Environment=VIDEO_WARMUP_SECONDS=0
+Environment=OUTPUT_START_TRIM_SECONDS=0
+Environment=MIN_FREE_MB=1024
+Environment=STATUS_LED_PIN=17
+ExecStart=/usr/bin/python3 /home/mayday/interview-recorder/scripts/gpio_recorder.py --pin 2 --record-script /home/mayday/interview-recorder/scripts/record_interview.sh --child-log-file /home/mayday/interview-recorder/logs/ffmpeg.log --status-led-pin ${STATUS_LED_PIN}
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
