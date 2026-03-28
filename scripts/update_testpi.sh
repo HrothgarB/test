@@ -22,6 +22,11 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "[update_testpi] Resetting managed helper scripts to repo versions"
+if ! git restore --worktree --staged -- scripts/install_testpi.sh scripts/record_interview.sh scripts/update_testpi.sh >/dev/null 2>&1; then
+  git checkout -- scripts/install_testpi.sh scripts/record_interview.sh scripts/update_testpi.sh
+fi
+
 echo "[update_testpi] Updating repository in $REPO_ROOT"
 git pull --ff-only
 

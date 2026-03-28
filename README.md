@@ -58,6 +58,12 @@ cd /home/mayday/interview-recorder
 
 That helper also refreshes the installed systemd unit so changes like the LED pin make it onto the Pi.
 
+If `git pull` complains about local changes in `scripts/install_testpi.sh`, `scripts/update_testpi.sh`, or `scripts/record_interview.sh`, reset just those managed helper files and try again:
+
+```bash
+git restore --worktree --staged -- scripts/install_testpi.sh scripts/update_testpi.sh scripts/record_interview.sh
+```
+
 For a fresh Pi, use the installer helper:
 
 ```bash
