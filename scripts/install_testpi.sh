@@ -52,8 +52,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "[install_testpi] Creating optional environment file: $ENV_FILE"
   sudo tee "$ENV_FILE" >/dev/null <<'EOF'
 # Pi-local overrides for interview-recorder.service.
-# This default starts the HTTP MJPEG preview on the Pi itself.
-STREAM_URL=http://testpi:8080/stream.mjpg
+# This default starts the HTTP MPEG-TS preview on the Pi itself.
+STREAM_URL=http://testpi:8080/stream.ts
 EOF
   sudo chmod 600 "$ENV_FILE"
 else

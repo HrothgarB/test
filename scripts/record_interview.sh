@@ -27,7 +27,6 @@ STREAM_FPS="${STREAM_FPS:-5}"
 STREAM_VIDEO_BITRATE="${STREAM_VIDEO_BITRATE:-300k}"
 STREAM_AUDIO_BITRATE="${STREAM_AUDIO_BITRATE:-64k}"
 STREAM_BUF_SIZE="${STREAM_BUF_SIZE:-600k}"
-STREAM_JPEG_QUALITY="${STREAM_JPEG_QUALITY:-12}"
 
 mkdir -p "$OUT_DIR"
 
@@ -147,7 +146,7 @@ if [[ "${1:-}" == "--self-check" ]]; then
     case "$(stream_scheme "$STREAM_URL")" in
       http)
         echo "[record_interview] Livestream target: $(summarize_stream_url "$STREAM_URL")"
-        echo "[record_interview] Livestream mode: HTTP MJPEG preview"
+        echo "[record_interview] Livestream mode: HTTP MPEG-TS preview"
         ;;
       udp)
         echo "[record_interview] Livestream target: $(summarize_stream_url "$STREAM_URL")"
@@ -210,7 +209,7 @@ echo "[record_interview] Output start trim (seconds): $OUTPUT_START_TRIM_SECONDS
 if [[ -n "$STREAM_URL" ]]; then
   case "$(stream_scheme "$STREAM_URL")" in
     http)
-      echo "[record_interview] Livestream mode: HTTP MJPEG preview at ${STREAM_SIZE}@${STREAM_FPS}fps (quality ${STREAM_JPEG_QUALITY})"
+      echo "[record_interview] Livestream mode: HTTP MPEG-TS preview at ${STREAM_SIZE}@${STREAM_FPS}fps"
       ;;
     udp)
       echo "[record_interview] Livestream mode: UDP preview at ${STREAM_SIZE}@${STREAM_FPS}fps"
@@ -252,7 +251,7 @@ FFMPEG_INPUT_ARGS=(
 if [[ -n "$STREAM_URL" ]]; then
   case "$(stream_scheme "$STREAM_URL")" in
     http)
-      FILTER_COMPLEX="[0:v]split=2[vrecord_src][vpreview_src];[vrecord_src]scale=in_range=pc:out_range=tv,format=yuv420p[vrecord];[vpreview_src]scale=${STREAM_SIZE},fps=${STREAM_FPS},format=yuvj420p[vpreview];[1:a]pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0[arecord]"
+      FILTER_COMPLEX="[0:v]split=2[vrecord_src][vpreview_src];[vrecord_src]scale=in_range=pc:out_range=tv,format=yuv420p[vrecord];[vpreview_src]scale=${STREAM_SIZE},fps=${STREAM_FPS},format=yuv420p[vpreview];[1:a]pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0,asplit=2[arecord][astream]"
       ffmpeg \
         "${FFMPEG_INPUT_ARGS[@]}" \
         -filter_complex "$FILTER_COMPLEX" \
@@ -270,11 +269,24 @@ if [[ -n "$STREAM_URL" ]]; then
         -movflags +faststart \
         "$OUT_FILE" \
         -map "[vpreview]" \
-        -an \
-        -c:v mjpeg \
-        -pix_fmt yuvj420p \
-        -q:v "$STREAM_JPEG_QUALITY" \
-        -f image2pipe \
+        -map "[astream]" \
+        -c:v libx264 \
+        -preset ultrafast \
+        -tune zerolatency \
+        -profile:v baseline \
+        -level 3.0 \
+        -g "$STREAM_FPS" \
+        -keyint_min "$STREAM_FPS" \
+        -sc_threshold 0 \
+        -pix_fmt yuv420p \
+        -b:v "$STREAM_VIDEO_BITRATE" \
+        -maxrate "$STREAM_VIDEO_BITRATE" \
+        -bufsize "$STREAM_BUF_SIZE" \
+        -c:a aac \
+        -b:a "$STREAM_AUDIO_BITRATE" \
+        -ac "$AUDIO_CHANNELS" \
+        -f mpegts \
+        -mpegts_flags resend_headers+pat_pmt_at_frames \
         pipe:1 | python3 "$SCRIPT_DIR/http_mjpeg_preview.py" --url "$STREAM_URL"
       ;;
     udp)

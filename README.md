@@ -127,7 +127,7 @@ Diagnostics currently include CPU temperature, load average, memory availability
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
 - Status LED behavior supported in controller: green when ready, red while recording, blue when not ready.
 - systemd unit default sets RGB LED pins to `17`/`27`/`22`, controller logging to `logs/controller.log`, and periodic diagnostics every 30 seconds.
-- Fresh installs now create `/etc/interview-recorder.env` with a default HTTP MJPEG `STREAM_URL` while keeping the local MP4 recording.
+- Fresh installs now create `/etc/interview-recorder.env` with a default HTTP MPEG-TS `STREAM_URL` while keeping the local MP4 recording.
 
 ## Verify camera and mic devices
 
@@ -150,18 +150,18 @@ This recorder script now mirrors your previously-working ffmpeg profile:
 
 ## Optional LAN livestream for VLC or OBS
 
-This recorder can also publish a live HTTP MJPEG preview while still saving the normal MP4 locally.
-The preview is designed for app-based viewers such as VLC or OBS on the same LAN.
+This recorder can also publish a live HTTP MPEG-TS preview while still saving the normal MP4 locally.
+The preview is designed for app-based viewers such as VLC or OBS on the same LAN and now includes audio.
 
 The systemd service reads Pi-local overrides from `/etc/interview-recorder.env`.
 Fresh installs create that file with this default preview target:
 
 ```bash
-STREAM_URL=http://testpi:8080/stream.mjpg
+STREAM_URL=http://testpi:8080/stream.ts
 ```
 
 The live preview uses a lightweight profile rather than the full recording quality:
-`426x240`, `5 fps`, and a lower JPEG quality so it stays responsive on the LAN.
+`426x240`, `5 fps`, and lower video/audio bitrates so it stays responsive on the LAN.
 
 To change it later:
 
@@ -173,7 +173,7 @@ sudo systemctl restart interview-recorder.service
 Viewer apps on the same LAN can open:
 
 ```text
-http://testpi:8080/stream.mjpg
+http://testpi:8080/stream.ts
 ```
 
 If your LAN does not resolve `testpi`, replace it with the Pi's IP address.
@@ -349,7 +349,7 @@ tail -F /home/mayday/interview-recorder/logs/ffmpeg.log
 - `gpio_recorder.py` sends SIGINT to FFmpeg so MP4 files finalize cleanly.
 - Button presses toggle an internal start/stop mode, so the second press is treated as stop even if ffmpeg exited unexpectedly.
 - If graceful stop hangs, the controller escalates to terminate/kill.
-- Removed `-use_wallclock_as_timestamps`, `-ts abs`, and `-fflags ... nobuffer/discardcorrupt` from recording defaults because they can make V4L2/ALSA capture less predictable during stop on flaky MJPEG streams.
+- Removed `-use_wallclock_as_timestamps`, `-ts abs`, and `-fflags ... nobuffer/discardcorrupt` from recording defaults because they can make V4L2/ALSA capture less predictable during stop on flaky camera streams.
 - Run compile check without creating cache files:
 
 ```bash
