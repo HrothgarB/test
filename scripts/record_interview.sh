@@ -7,7 +7,6 @@ set -euo pipefail
 # - Uses timestamp filenames (YYYY-MM-DD_HH-MM-SS.mp4)
 # - Captures 720p video + USB audio to MP4
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${OUT_DIR:-/recordings}"
 VIDEO_DEV="${VIDEO_DEV:-/dev/video0}"
 AUDIO_DEV="${AUDIO_DEV:-}"
@@ -21,12 +20,6 @@ OUTPUT_START_TRIM_SECONDS="${OUTPUT_START_TRIM_SECONDS:-0}"
 START_DELAY_SECONDS="${START_DELAY_SECONDS:-0}"
 VIDEO_WARMUP_SECONDS="${VIDEO_WARMUP_SECONDS:-0}"
 MIN_FREE_MB="${MIN_FREE_MB:-1024}"
-STREAM_URL="${STREAM_URL:-}"
-STREAM_SIZE="${STREAM_SIZE:-426x240}"
-STREAM_FPS="${STREAM_FPS:-5}"
-STREAM_VIDEO_BITRATE="${STREAM_VIDEO_BITRATE:-300k}"
-STREAM_AUDIO_BITRATE="${STREAM_AUDIO_BITRATE:-64k}"
-STREAM_BUF_SIZE="${STREAM_BUF_SIZE:-600k}"
 
 mkdir -p "$OUT_DIR"
 
@@ -63,38 +56,6 @@ check_free_space_mb() {
     exit 1
   fi
   echo "[record_interview] Free space check passed: ${avail_mb}MB available"
-}
-
-summarize_stream_url() {
-  local url rest hostport path
-  url="$1"
-  rest="${url#*://}"
-  if [[ "$rest" == "$url" ]]; then
-    printf "%s" "$url"
-    return
-  fi
-
-  hostport="${rest%%/*}"
-  path="${rest#"$hostport"}"
-  path="${path%%\?*}"
-  if [[ -n "$path" && "$path" != "/" ]]; then
-    printf "%s%s" "$hostport" "$path"
-    return
-  fi
-
-  printf "%s" "$hostport"
-}
-
-stream_scheme() {
-  local url scheme
-  url="$1"
-  scheme="${url%%:*}"
-  if [[ "$scheme" == "$url" ]]; then
-    printf "%s" ""
-    return
-  fi
-
-  printf "%s" "${scheme,,}"
 }
 
 list_capture_cards() {
@@ -142,24 +103,6 @@ if [[ "${1:-}" == "--self-check" ]]; then
   echo "[record_interview] Audio device: $AUDIO_DEV"
   echo "[record_interview] Output dir: $OUT_DIR"
   echo "[record_interview] Min free space (MB): $MIN_FREE_MB"
-  if [[ -n "$STREAM_URL" ]]; then
-    case "$(stream_scheme "$STREAM_URL")" in
-      http)
-        echo "[record_interview] Livestream target: $(summarize_stream_url "$STREAM_URL")"
-        echo "[record_interview] Livestream mode: HTTP MPEG-TS preview"
-        ;;
-      udp)
-        echo "[record_interview] Livestream target: $(summarize_stream_url "$STREAM_URL")"
-        echo "[record_interview] Livestream mode: UDP preview"
-        ;;
-      *)
-        echo "[record_interview] Livestream target: $(summarize_stream_url "$STREAM_URL")"
-        echo "[record_interview] Livestream mode: unsupported URL scheme"
-        ;;
-    esac
-  else
-    echo "[record_interview] Livestream target: disabled"
-  fi
   exit 0
 fi
 
@@ -206,22 +149,6 @@ echo "[record_interview] Using input format: $VIDEO_INPUT_FORMAT"
 echo "[record_interview] Startup delay (seconds): $START_DELAY_SECONDS"
 echo "[record_interview] Video warmup (seconds): $VIDEO_WARMUP_SECONDS"
 echo "[record_interview] Output start trim (seconds): $OUTPUT_START_TRIM_SECONDS"
-if [[ -n "$STREAM_URL" ]]; then
-  case "$(stream_scheme "$STREAM_URL")" in
-    http)
-      echo "[record_interview] Livestream mode: HTTP MPEG-TS preview at ${STREAM_SIZE}@${STREAM_FPS}fps"
-      ;;
-    udp)
-      echo "[record_interview] Livestream mode: UDP preview at ${STREAM_SIZE}@${STREAM_FPS}fps"
-      ;;
-    *)
-      echo "[record_interview] Livestream mode: unsupported URL scheme"
-      ;;
-  esac
-  echo "[record_interview] Livestream enabled to: $(summarize_stream_url "$STREAM_URL")"
-else
-  echo "[record_interview] Livestream disabled"
-fi
 
 if [[ "$START_DELAY_SECONDS" != "0" ]]; then
   sleep "$START_DELAY_SECONDS"
@@ -239,104 +166,13 @@ if [[ "$OUTPUT_START_TRIM_SECONDS" != "0" ]]; then
   TRIM_ARGS=(-ss "$OUTPUT_START_TRIM_SECONDS")
 fi
 
-FFMPEG_INPUT_ARGS=(
-  -loglevel warning
-  -thread_queue_size 1024
-  -f v4l2 -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV"
-  -thread_queue_size 1024
-  -f alsa -ar "$AUDIO_RATE" -i "$AUDIO_DEV"
-  "${TRIM_ARGS[@]}"
-)
-
-if [[ -n "$STREAM_URL" ]]; then
-  case "$(stream_scheme "$STREAM_URL")" in
-    http)
-      FILTER_COMPLEX="[0:v]split=2[vrecord_src][vpreview_src];[vrecord_src]scale=in_range=pc:out_range=tv,format=yuv420p[vrecord];[vpreview_src]scale=${STREAM_SIZE},fps=${STREAM_FPS},format=yuv420p[vpreview];[1:a]pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0,asplit=2[arecord][astream]"
-      ffmpeg \
-        "${FFMPEG_INPUT_ARGS[@]}" \
-        -filter_complex "$FILTER_COMPLEX" \
-        -map "[vrecord]" \
-        -map "[arecord]" \
-        -c:v libx264 \
-        -preset ultrafast \
-        -tune zerolatency \
-        -g "$FPS" \
-        -keyint_min "$FPS" \
-        -sc_threshold 0 \
-        -c:a aac \
-        -b:a "$AUDIO_BITRATE" \
-        -ac "$AUDIO_CHANNELS" \
-        -movflags +faststart \
-        "$OUT_FILE" \
-        -map "[vpreview]" \
-        -map "[astream]" \
-        -c:v libx264 \
-        -preset ultrafast \
-        -tune zerolatency \
-        -profile:v baseline \
-        -level 3.0 \
-        -g "$STREAM_FPS" \
-        -keyint_min "$STREAM_FPS" \
-        -sc_threshold 0 \
-        -pix_fmt yuv420p \
-        -b:v "$STREAM_VIDEO_BITRATE" \
-        -maxrate "$STREAM_VIDEO_BITRATE" \
-        -bufsize "$STREAM_BUF_SIZE" \
-        -c:a aac \
-        -b:a "$STREAM_AUDIO_BITRATE" \
-        -ac "$AUDIO_CHANNELS" \
-        -f mpegts \
-        -mpegts_flags resend_headers+pat_pmt_at_frames \
-        pipe:1 | python3 "$SCRIPT_DIR/http_mjpeg_preview.py" --url "$STREAM_URL"
-      ;;
-    udp)
-      FILTER_COMPLEX="[0:v]split=2[vrecord_src][vstream_src];[vrecord_src]scale=in_range=pc:out_range=tv,format=yuv420p[vrecord];[vstream_src]scale=${STREAM_SIZE},fps=${STREAM_FPS},format=yuv420p[vstream];[1:a]pan=mono|c0=.5*c0+.5*c1,aresample=async=1000:first_pts=0,asplit=2[arecord][astream]"
-      exec ffmpeg \
-        "${FFMPEG_INPUT_ARGS[@]}" \
-        -filter_complex "$FILTER_COMPLEX" \
-        -map "[vrecord]" \
-        -map "[arecord]" \
-        -c:v libx264 \
-        -preset ultrafast \
-        -tune zerolatency \
-        -g "$FPS" \
-        -keyint_min "$FPS" \
-        -sc_threshold 0 \
-        -c:a aac \
-        -b:a "$AUDIO_BITRATE" \
-        -ac "$AUDIO_CHANNELS" \
-        -movflags +faststart \
-        "$OUT_FILE" \
-        -map "[vstream]" \
-        -map "[astream]" \
-        -c:v libx264 \
-        -preset ultrafast \
-        -tune zerolatency \
-        -profile:v baseline \
-        -level 3.0 \
-        -g "$STREAM_FPS" \
-        -keyint_min "$STREAM_FPS" \
-        -sc_threshold 0 \
-        -pix_fmt yuv420p \
-        -b:v "$STREAM_VIDEO_BITRATE" \
-        -maxrate "$STREAM_VIDEO_BITRATE" \
-        -bufsize "$STREAM_BUF_SIZE" \
-        -c:a aac \
-        -b:a "$STREAM_AUDIO_BITRATE" \
-        -ac "$AUDIO_CHANNELS" \
-        -f mpegts \
-        -mpegts_flags resend_headers+pat_pmt_at_frames \
-        "$STREAM_URL"
-      ;;
-    *)
-      echo "[record_interview] Unsupported livestream URL scheme: $STREAM_URL" >&2
-      exit 1
-      ;;
-  esac
-fi
-
 exec ffmpeg \
-  "${FFMPEG_INPUT_ARGS[@]}" \
+  -loglevel warning \
+  -thread_queue_size 1024 \
+  -f v4l2 -input_format "$VIDEO_INPUT_FORMAT" -framerate "$FPS" -video_size "$SIZE" -i "$VIDEO_DEV" \
+  -thread_queue_size 1024 \
+  -f alsa -ar "$AUDIO_RATE" -i "$AUDIO_DEV" \
+  "${TRIM_ARGS[@]}" \
   -c:v libx264 \
   -preset ultrafast \
   -tune zerolatency \

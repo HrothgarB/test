@@ -10,7 +10,6 @@ SERVICE_NAME="${SERVICE_NAME:-interview-recorder.service}"
 INSTALL_DIR="${INSTALL_DIR:-/home/mayday/interview-recorder}"
 RECORDINGS_DIR="${RECORDINGS_DIR:-/recordings}"
 SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-$(id -un)}}"
-ENV_FILE="${ENV_FILE:-/etc/interview-recorder.env}"
 
 cd "$REPO_ROOT"
 
@@ -48,22 +47,11 @@ if [[ "$REPO_ROOT" != "$INSTALL_DIR" ]]; then
   echo "[install_testpi] Expected install dir is $INSTALL_DIR"
 fi
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "[install_testpi] Creating optional environment file: $ENV_FILE"
-  sudo tee "$ENV_FILE" >/dev/null <<'EOF'
-# Pi-local overrides for interview-recorder.service.
-# This default starts the HTTP MPEG-TS preview on the Pi itself.
-STREAM_URL=http://testpi:8080/stream.ts
-EOF
-  sudo chmod 600 "$ENV_FILE"
-else
-  echo "[install_testpi] Preserving existing environment file: $ENV_FILE"
-fi
-
 echo "[install_testpi] Verifying scripts"
 chmod +x scripts/install_testpi.sh scripts/update_testpi.sh scripts/record_interview.sh
-bash -n scripts/install_testpi.sh scripts/update_testpi.sh scripts/record_interview.sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/http_mjpeg_preview.py scripts/gpio_recorder.py
+bash -n scripts/record_interview.sh
+bash -n scripts/update_testpi.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/gpio_recorder.py
 
 if [[ -f "systemd/$SERVICE_NAME" ]]; then
   echo "[install_testpi] Installing systemd unit"

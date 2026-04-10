@@ -4,7 +4,7 @@ This project turns a Raspberry Pi 4 into a push-button interview recorder applia
 
 ## What is included
 
-- `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings/YYYY/MM/` and can optionally stream live to a LAN viewer for VLC/OBS
+- `scripts/record_interview.sh`: FFmpeg recording script that writes MP4 files to `/recordings/YYYY/MM/` using timestamp filenames
 - `scripts/gpio_recorder.py`: GPIO button controller (green ready, red recording, blue not-ready, built-in diagnostics)
 - `scripts/install_testpi.sh`: one-time Pi setup helper
 - `scripts/update_testpi.sh`: fast-forward update helper for an existing Pi install
@@ -45,7 +45,7 @@ If this repo was cloned with `git`, update it in place on the Pi:
 cd /home/mayday/interview-recorder
 git pull --ff-only
 bash -n scripts/record_interview.sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/http_mjpeg_preview.py scripts/gpio_recorder.py
+PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/gpio_recorder.py
 sudo systemctl restart interview-recorder.service
 ```
 
@@ -57,7 +57,6 @@ cd /home/mayday/interview-recorder
 ```
 
 That helper also refreshes the installed systemd unit so changes like the LED pin make it onto the Pi.
-Your Pi-local `/etc/interview-recorder.env` settings are preserved, including any custom `STREAM_URL`.
 
 If `git pull` complains about local changes in `scripts/install_testpi.sh`, `scripts/update_testpi.sh`, or `scripts/record_interview.sh`, reset just those managed helper files and try again:
 
@@ -114,7 +113,7 @@ The systemd service now runs with `audio`, `video`, and `gpio` access so the but
 ## Logs and diagnostics
 
 - `logs/controller.log`: controller events, RGB state changes, and periodic system diagnostics
-- `logs/ffmpeg.log`: recorder subprocess output, including LAN livestream startup/errors
+- `logs/ffmpeg.log`: recorder subprocess output
 - `journalctl -u interview-recorder.service -f`: live systemd view
 - `tail -F logs/controller.log`: controller and diagnostics log
 - `tail -F logs/ffmpeg.log`: ffmpeg capture log
@@ -127,7 +126,6 @@ Diagnostics currently include CPU temperature, load average, memory availability
 - Low-disk guard blocks recording when free space is below `MIN_FREE_MB` (default `1024`).
 - Status LED behavior supported in controller: green when ready, red while recording, blue when not ready.
 - systemd unit default sets RGB LED pins to `17`/`27`/`22`, controller logging to `logs/controller.log`, and periodic diagnostics every 30 seconds.
-- Fresh installs now create `/etc/interview-recorder.env` with a default HTTP MPEG-TS `STREAM_URL` while keeping the local MP4 recording.
 
 ## Verify camera and mic devices
 
@@ -147,42 +145,6 @@ This recorder script now mirrors your previously-working ffmpeg profile:
 - `-f alsa -ar 44100 -i auto-detected card (or AUDIO_DEV override)`
 - Optional output trim via `OUTPUT_START_TRIM_SECONDS` (default `0`)
 - `-c:v libx264 -preset ultrafast -tune zerolatency`
-
-## Optional LAN livestream for VLC or OBS
-
-This recorder can also publish a live HTTP MPEG-TS preview while still saving the normal MP4 locally.
-The preview is designed for app-based viewers such as VLC or OBS on the same LAN and now includes audio.
-
-The systemd service reads Pi-local overrides from `/etc/interview-recorder.env`.
-Fresh installs create that file with this default preview target:
-
-```bash
-STREAM_URL=http://testpi:8080/stream.ts
-```
-
-The live preview uses a lightweight profile rather than the full recording quality:
-`426x240`, `5 fps`, and lower video/audio bitrates so it stays responsive on the LAN.
-
-To change it later:
-
-```bash
-sudoedit /etc/interview-recorder.env
-sudo systemctl restart interview-recorder.service
-```
-
-Viewer apps on the same LAN can open:
-
-```text
-http://testpi:8080/stream.ts
-```
-
-If your LAN does not resolve `testpi`, replace it with the Pi's IP address.
-
-Notes:
-
-- Local recording remains the source of truth. If the preview fails, the MP4 recording keeps running.
-- The live preview is intentionally lightweight, not a full-quality copy of the local MP4.
-- `STREAM_URL` can be left unset or empty to disable livestreaming completely.
 
 ## Create and test recordings directory
 
@@ -276,10 +238,6 @@ sudo systemctl daemon-reload
 sudo systemctl restart interview-recorder.service
 ```
 
-If you prefer to keep local overrides out of the unit, place them in `/etc/interview-recorder.env` instead.
-That file is loaded automatically by the service and is the recommended place for `STREAM_URL`.
-If you edit only that env file, just restart the service; `daemon-reload` is only needed when the unit file itself changes.
-
 
 
 If logs show `cannot open audio device plughw:X,0 (No such file or directory)`, your configured card index is wrong for the current boot.
@@ -349,7 +307,7 @@ tail -F /home/mayday/interview-recorder/logs/ffmpeg.log
 - `gpio_recorder.py` sends SIGINT to FFmpeg so MP4 files finalize cleanly.
 - Button presses toggle an internal start/stop mode, so the second press is treated as stop even if ffmpeg exited unexpectedly.
 - If graceful stop hangs, the controller escalates to terminate/kill.
-- Removed `-use_wallclock_as_timestamps`, `-ts abs`, and `-fflags ... nobuffer/discardcorrupt` from recording defaults because they can make V4L2/ALSA capture less predictable during stop on flaky camera streams.
+- Removed `-use_wallclock_as_timestamps`, `-ts abs`, and `-fflags ... nobuffer/discardcorrupt` from recording defaults because they can make V4L2/ALSA capture less predictable during stop on flaky MJPEG streams.
 - Run compile check without creating cache files:
 
 ```bash

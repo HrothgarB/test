@@ -31,10 +31,10 @@ echo "[update_testpi] Updating repository in $REPO_ROOT"
 git pull --ff-only
 
 echo "[update_testpi] Verifying shell script syntax"
-bash -n scripts/install_testpi.sh scripts/update_testpi.sh scripts/record_interview.sh
+bash -n scripts/record_interview.sh
 
 echo "[update_testpi] Verifying Python syntax"
-PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/http_mjpeg_preview.py scripts/gpio_recorder.py
+PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/gpio_recorder.py
 
 if [[ -f "systemd/$SERVICE_NAME" ]]; then
   echo "[update_testpi] Refreshing systemd unit at $SYSTEMD_UNIT_PATH"
